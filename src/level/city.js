@@ -6,7 +6,10 @@ import { K } from './surfaces.js';
 // Ville intermédiaire autour du parcours : îlots d'immeubles blancs à corniches,
 // toits habités, quelques tours repères. Rien ici n'a de collision (hors d'atteinte).
 
-const COLORS = [PAL.plaster, PAL.plaster, PAL.plasterWarm, PAL.plasterWarm, PAL.plasterCool, PAL.plasterSand, PAL.plasterRose, PAL.plasterSage, 0xf7f4f0];
+// Blancs et crèmes en majorité, quelques tons plus soutenus (ocre, terre cuite rosée,
+// sauge, pierre grise) pour que la ville se lise en couches.
+const COLORS = [PAL.plaster, PAL.plaster, PAL.plasterWarm, PAL.plasterWarm, PAL.plasterCool, PAL.plasterSand, PAL.plasterRose, PAL.plasterSage, 0xf7f4f0,
+  0xeac9a2, 0xe7b9a3, 0xd3dbc8, 0xdcd5cb, 0xcfd6de, 0xf0d5b4];
 
 function overlaps(a, list, m) {
   return list.some((b) => a.minX < b.maxX + m && a.maxX > b.minX - m && a.minZ < b.maxZ + m && a.maxZ > b.minZ - m);
@@ -43,7 +46,7 @@ export function buildCity(ctx, { corridor, keepOut, cap = () => Infinity }) {
         else if (dEdge < 45) top = -14 + rand() * 18;
         else top = -9 + rand() * 22;
         let tower = false;
-        if (dEdge > 34 && r < 0.08) { top = 22 + rand() * 24; tower = true; }
+        if (dEdge > 38 && r < 0.1) { top = 12 + rand() * 22; tower = true; }
         if (zc < -225 && Math.abs((minX + maxX) / 2 - 8) < 45) top = Math.min(top, -4 + rand() * 4);
         const capTop = cap((minX + maxX) / 2, zc);
         if (top > capTop) { top = capTop - rand() * 6; tower = false; }
@@ -56,12 +59,30 @@ export function buildCity(ctx, { corridor, keepOut, cap = () => Infinity }) {
           const sh = Math.min(w, depth) * 0.25;
           bx = { minX: minX + sh * 0.5, maxX: maxX - sh * 0.5, minZ: zj0 + sh * 0.5, maxZ: zj1 - sh * 0.5 };
         }
-        const st = tower && rand() < 0.6 ? 0.97 + rand() * 0.029 : rand() * 0.96;
-        const b = building(nctx, { ...bx, top, batch, color: tower && st >= 0.97 ? 0xe9e6ec : col, style: st, deck: rand() < 0.4 ? 'pave' : 'roof', collide: false, bands: !(st >= 0.97), bandEvery: 2 + Math.floor(rand() * 3) });
+        const st = tower && rand() < 0.25 ? 0.97 + rand() * 0.029 : rand() * 0.96;
+        const b = building(nctx, { ...bx, top, batch, color: tower && st >= 0.97 ? 0xeee7e2 : col, style: st, deck: rand() < 0.4 ? 'pave' : 'roof', collide: false, bands: !(st >= 0.97), bandEvery: 2 + Math.floor(rand() * 3) });
         placed.push(rect);
-        // Retrait en attique
+        // Tours : gradins successifs, chacun avec sa corniche, puis un édicule technique
         let roofTop = top;
-        if ((tower || rand() < 0.3) && b.w > 8 && b.d > 8) {
+        if (tower && b.w > 6 && b.d > 6) {
+          let tier = b, t = top;
+          const nTier = 1 + Math.floor(rand() * 2.4);
+          for (let k = 0; k < nTier; k++) {
+            const inset = 1.2 + rand() * 1.6;
+            if (tier.w - 2 * inset < 4 || tier.d - 2 * inset < 4) break;
+            const h = 4 + rand() * 9;
+            tier = building(nctx, { minX: tier.minX + inset, maxX: tier.maxX - inset, minZ: tier.minZ + inset, maxZ: tier.maxZ - inset, top: t + h, bottom: t, batch, color: k % 2 ? col : (b.color ?? col), style: st, deck: 'roof', collide: false, bands: false, detail: 'simple' });
+            // petite terrasse sur le gradin inférieur
+            roofDress(nctx, { ...b, minX: b.minX, maxX: b.minX + inset, top: t }, { batch, far: true, parapet: false });
+            t += h;
+          }
+          // Édicule technique à persiennes, mât
+          const ew = Math.min(tier.w, tier.d) * 0.45;
+          batch.box(tier.cx, t + 1.5, tier.cz, ew, 3.0, ew * 0.8, { kind: K.VENT, color: PAL.metalLight });
+          batch.box(tier.cx, t + 3.08, tier.cz, ew + 0.3, 0.16, ew * 0.8 + 0.3, { kind: K.PLASTER, color: PAL.coping });
+          roofDress(nctx, tier, { batch, far: !near, parapet: true });
+          roofTop = t + 3.2;
+        } else if (rand() < 0.42 && b.w > 8 && b.d > 8) {
           const inset = 1.8 + rand() * 1.5;
           const h = tower ? 4 + rand() * 10 : 3.4;
           const a = building(nctx, { minX: b.minX + inset, maxX: b.maxX - inset, minZ: b.minZ + inset, maxZ: b.maxZ - inset, top: top + h, bottom: top, batch, color: col, deck: 'roof', collide: false, bands: false, style: b.style });

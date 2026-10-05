@@ -50,6 +50,27 @@ export class ContactShadows {
     this.n += 4;
   }
 
+  // Salissure verticale au pied d'un mur : quad posé contre la face (x0,z0)-(x1,z1),
+  // de y à y + h, décalé de 1 cm vers l'extérieur (nx, nz). Plein en bas, fondu en haut,
+  // adouci aux extrémités.
+  addWall(x0, z0, x1, z1, y, h, k = 1, nx = 0, nz = 0) {
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    if (len < 0.05) return;
+    const ox = nx * 0.012, oz = nz * 0.012;
+    const ramp = Math.min(0.5, len * 0.25) / len;
+    const segs = [[0, ramp, 0.02, 0.325], [ramp, 1 - ramp, 0.325, 0.675], [1 - ramp, 1, 0.675, 0.98]];
+    for (const [t0, t1, u0, u1] of segs) {
+      const ax = x0 + (x1 - x0) * t0 + ox, az = z0 + (z1 - z0) * t0 + oz;
+      const bx = x0 + (x1 - x0) * t1 + ox, bz = z0 + (z1 - z0) * t1 + oz;
+      const b = this.n;
+      this.pos.push(ax, y, az, ax, y + h, az, bx, y + h, bz, bx, y, bz);
+      this.uv.push(u0, 0.5, u0, 0.98, u1, 0.98, u1, 0.5);
+      for (let i = 0; i < 4; i++) this.col.push(1, 1, 1, k);
+      this.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      this.n += 4;
+    }
+  }
+
   mesh() {
     if (!this.n) return null;
     const g = new THREE.BufferGeometry();
@@ -59,8 +80,8 @@ export class ContactShadows {
     g.setIndex(this.n > 65535 ? new THREE.Uint32BufferAttribute(this.idx, 1) : new THREE.Uint16BufferAttribute(this.idx, 1));
     g.computeBoundingSphere();
     const mat = new THREE.MeshBasicMaterial({
-      color: 0x3a2c3c, map: makeTexture(), vertexColors: true, transparent: true, opacity: 0.38,
-      depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+      color: 0x3a2c3c, map: makeTexture(), vertexColors: true, transparent: true, opacity: 0.46,
+      depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
     });
     const m = new THREE.Mesh(g, mat);
     m.renderOrder = 1;
