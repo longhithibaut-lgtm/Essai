@@ -11,6 +11,7 @@ import { createMaterials } from './materials.js';
 import { installTestAPI } from './testapi.js';
 import { createFpsMeter } from './fps.js';
 import { Birds } from './birds.js';
+import { titleCamera } from './titlecam.js';
 
 const TEST = new URLSearchParams(location.search).has('test');
 const STEP = 1 / 120;
@@ -246,32 +247,9 @@ class Game {
       this.camera.rotation.set(v.pitch, v.yaw, 0);
       if (this.camera.fov !== 72) { this.camera.fov = 72; this.camera.updateProjectionMatrix(); }
     } else if (this.state === 'title' || this.ui.dawn) {
-      // Plan d'ouverture composé (et plan de fin, en écho) : face au soleil levant,
-      // au-dessus de la mer de nuages d'où émergent les tours lointaines de la ville.
-      // Le haut de l'image reste un ciel vide pour le titre, le bas un sol de nuages
-      // calme pour le menu. La caméra dérive à peine, comme portée par l'air tiède.
-      // Objectif décentré (comme une chambre d'architecte) : l'horizon descend sous le
-      // milieu de l'image sans incliner la caméra, les tours restent bien droites.
-      // ui.screen('play') rend l'objectif normal au joueur.
-      const shot = this.titleShot || (this.titleShot = { pos: [-222, 8, -157.5], yaw: 1.075, pitch: 0, fov: 67, shift: 0.18 });
-      const cam = this.camera;
-      const a = this.time * 0.032;
-      const along = Math.sin(a) * 4, side = Math.sin(a * 0.71 + 1.3) * 1.2, lift = Math.sin(a * 1.27 + 0.4) * 0.6;
-      const sy = Math.sin(shot.yaw), cy = Math.cos(shot.yaw);
-      cam.position.set(shot.pos[0] - sy * along + cy * side, shot.pos[1] + lift, shot.pos[2] - cy * along - sy * side);
-      const look = this.titleLook || (this.titleLook = { x: 0, y: 0 });
-      const k = Math.min(1, dt * 1.2);
-      look.x += (this.ui.pointer.x - look.x) * k;
-      look.y += (this.ui.pointer.y - look.y) * k;
-      cam.rotation.order = 'YXZ';
-      cam.rotation.set(shot.pitch + Math.sin(a * 0.83) * 0.004 - look.y * 0.012, shot.yaw + Math.sin(a * 0.57 + 2.1) * 0.012 - look.x * 0.022, Math.sin(a * 0.49) * 0.003);
-      if (cam.fov !== shot.fov || !cam.view || !cam.view.enabled || cam.view.offsetY !== -shot.shift) {
-        cam.fov = shot.fov;
-        cam.view = { enabled: true, fullWidth: 1, fullHeight: 1, offsetX: 0, offsetY: -shot.shift, width: 1, height: 1 };
-        cam.updateProjectionMatrix();
-      }
-      if (this.ui.dawn) this.r.setFade(0);
-      (this.birds || (this.birds = new Birds(this.scene))).update(dt, shot);
+      // Plan d'ouverture composé sur la ville du parcours (et plan de fin, au-dessus
+      // de la cloche) : voir titlecam.js.
+      titleCamera(this, dt);
     } else {
       this.player.updateCamera(dt, this.acc / STEP);
     }

@@ -46,33 +46,35 @@
       <div id="lock" class="lock">Clique pour reprendre la main</div>
     </div>
 
-    <!-- Écran titre : posé sur le plan d'ouverture (soleil levant, mer de nuages) -->
+    <!-- Écran titre : posé sur la ville du parcours, le texte côté soleil (voir titlecam.js) -->
     <section id="title" class="screen screen-title">
-      <div class="title-head">
-        <svg class="mark" viewBox="0 0 160 70" aria-hidden="true">
-          <g class="mark-rays">
-            <line x1="80" y1="6" x2="80" y2="16" />
-            <line x1="52" y1="16" x2="57" y2="24" />
-            <line x1="108" y1="16" x2="103" y2="24" />
-            <line x1="32" y1="36" x2="40" y2="40" />
-            <line x1="128" y1="36" x2="120" y2="40" />
-          </g>
-          <path class="mark-sun" d="M54 54 A26 26 0 0 1 106 54" />
-          <line class="mark-horizon" x1="8" y1="54" x2="152" y2="54" />
-          <line class="mark-horizon thin" x1="36" y1="62" x2="124" y2="62" />
-        </svg>
-        <h1 class="logo" aria-label="Aube"><span>A</span><span>u</span><span>b</span><span>e</span></h1>
-        <p class="tagline">Un parcours au-dessus des nuages</p>
-      </div>
+      <div class="title-col">
+        <div class="title-head">
+          <svg class="mark" viewBox="0 0 160 70" aria-hidden="true">
+            <g class="mark-rays">
+              <line x1="80" y1="6" x2="80" y2="16" />
+              <line x1="52" y1="16" x2="57" y2="24" />
+              <line x1="108" y1="16" x2="103" y2="24" />
+              <line x1="32" y1="36" x2="40" y2="40" />
+              <line x1="128" y1="36" x2="120" y2="40" />
+            </g>
+            <path class="mark-sun" d="M54 54 A26 26 0 0 1 106 54" />
+            <line class="mark-horizon" x1="8" y1="54" x2="152" y2="54" />
+            <line class="mark-horizon thin" x1="36" y1="62" x2="124" y2="62" />
+          </svg>
+          <h1 class="logo" aria-label="Aube"><span>A</span><span>u</span><span>b</span><span>e</span></h1>
+          <p class="tagline">Un parcours au-dessus des nuages</p>
+        </div>
 
-      <div class="title-ground">
-        <nav class="menu menu-title" aria-label="Menu principal">
-          <button id="start-btn" class="menu-item primary" disabled>Commencer</button>
-          <button class="menu-item" data-open="controls">Commandes</button>
-          <button class="menu-item" data-open="settings">Réglages</button>
-        </nav>
-        <p id="loading" class="loading">Le jour se lève…</p>
-        <p id="touch-note" class="touch-note" hidden>Aube se joue au clavier et à la souris, sur ordinateur.</p>
+        <div class="title-ground">
+          <nav class="menu menu-title" aria-label="Menu principal">
+            <button id="start-btn" class="menu-item primary" disabled>Commencer</button>
+            <button class="menu-item" data-open="controls">Commandes</button>
+            <button class="menu-item" data-open="settings">Réglages</button>
+          </nav>
+          <p id="loading" class="loading">Le jour se lève…</p>
+          <p id="touch-note" class="touch-note" hidden>Aube se joue au clavier et à la souris, sur ordinateur.</p>
+        </div>
       </div>
 
       <footer class="foot">
@@ -80,6 +82,7 @@
         <span class="foot-dot"></span>
         <span>Aucun chrono ne presse</span>
       </footer>
+      <p class="still-caption" aria-hidden="true"><span class="still-rule"></span><span class="still-name">Le jardin du bassin</span></p>
     </section>
 
     <!-- Pause -->
@@ -105,41 +108,44 @@
       </div>
     </section>
 
-    <!-- Fin du parcours : retour au soleil levant, comme une dernière page -->
+    <!-- Fin du parcours : sur le pavillon de la cloche, le campanile à droite (voir titlecam.js) -->
     <section id="end" class="screen screen-end" hidden>
-      <div class="end-head">
-        <svg class="mark" viewBox="0 0 160 70" aria-hidden="true">
-          <g class="mark-rays">
-            <line x1="80" y1="6" x2="80" y2="16" />
-            <line x1="52" y1="16" x2="57" y2="24" />
-            <line x1="108" y1="16" x2="103" y2="24" />
-            <line x1="32" y1="36" x2="40" y2="40" />
-            <line x1="128" y1="36" x2="120" y2="40" />
-          </g>
-          <path class="mark-sun" d="M54 54 A26 26 0 0 1 106 54" />
-          <line class="mark-horizon" x1="8" y1="54" x2="152" y2="54" />
-        </svg>
-        <p class="end-kicker">Fin du parcours</p>
-        <h2 class="end-title">La cloche a sonné</h2>
-        <p id="end-line" class="end-line">Le matin s’est levé avec toi.</p>
+      <div class="end-col">
+        <div class="end-head">
+          <svg class="mark" viewBox="0 0 160 70" aria-hidden="true">
+            <g class="mark-rays">
+              <line x1="80" y1="6" x2="80" y2="16" />
+              <line x1="52" y1="16" x2="57" y2="24" />
+              <line x1="108" y1="16" x2="103" y2="24" />
+              <line x1="32" y1="36" x2="40" y2="40" />
+              <line x1="128" y1="36" x2="120" y2="40" />
+            </g>
+            <path class="mark-sun" d="M54 54 A26 26 0 0 1 106 54" />
+            <line class="mark-horizon" x1="8" y1="54" x2="152" y2="54" />
+          </svg>
+          <p class="end-kicker">Fin du parcours</p>
+          <h2 class="end-title">La cloche a sonné</h2>
+          <p id="end-line" class="end-line">Le matin s’est levé avec toi.</p>
+        </div>
+        <div class="end-ground">
+          <dl class="end-stats">
+            <div class="end-stat">
+              <dt>Lueurs</dt>
+              <dd><span class="orb-ico" aria-hidden="true"></span><span id="end-orbs">0 sur 12</span></dd>
+            </div>
+            <div class="end-stat">
+              <dt>Promenade</dt>
+              <dd><span id="end-time">—</span></dd>
+            </div>
+          </dl>
+          <p id="end-best" class="end-best"></p>
+          <nav class="menu menu-end" aria-label="Fin">
+            <button id="again-btn" class="menu-item primary">Rejouer</button>
+            <button id="home-btn" class="menu-item">Revenir au titre</button>
+          </nav>
+        </div>
       </div>
-      <div class="end-ground">
-        <dl class="end-stats">
-          <div class="end-stat">
-            <dt>Lueurs</dt>
-            <dd><span class="orb-ico" aria-hidden="true"></span><span id="end-orbs">0 sur 12</span></dd>
-          </div>
-          <div class="end-stat">
-            <dt>Promenade</dt>
-            <dd><span id="end-time">—</span></dd>
-          </div>
-        </dl>
-        <p id="end-best" class="end-best"></p>
-        <nav class="menu menu-row" aria-label="Fin">
-          <button id="again-btn" class="menu-item primary">Rejouer</button>
-          <button id="home-btn" class="menu-item">Revenir au titre</button>
-        </nav>
-      </div>
+      <p class="still-caption" aria-hidden="true"><span class="still-rule"></span><span class="still-name">Le pavillon de la cloche</span></p>
     </section>
 
     <!-- Feuillets : commandes et réglages (depuis le titre ou la pause) -->

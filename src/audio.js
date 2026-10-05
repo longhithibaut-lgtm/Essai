@@ -4,8 +4,10 @@
 //   de dix secondes), une basse ronde, et un célesta qui égrène des notes
 //   pentatoniques, plus nombreuses quand on court. Un voile aigu s'ajoute à mesure
 //   qu'on cueille des lueurs.
-// - Ambiance : vent qui souffle par rafales, souffle de vitesse, oiseaux lointains.
-// - Effets : pas doux et alternés, saut, réception, glissade, accents musicaux sur
+// - Ambiance : vent qui souffle par rafales (et fait tinter un carillon à vent quand il
+//   forcit), souffle de vitesse, oiseaux lointains, cloche du pavillon au loin sur le titre.
+// - Effets : pas doux et alternés, paumes posées sur les murs et les rebords, souffle
+//   au rétablissement, saut, réception, glissade, accents musicaux sur
 //   les murs, carillons des lueurs (des phrases qui montent sans jamais crier),
 //   cloche d'arrivée, sons d'interface, souffle et arpège au moment de partir.
 // - Scènes : sur le titre et la fin, le célesta se raréfie et l'air du large
@@ -231,6 +233,8 @@ export class Audio {
     this.rest = 0;
     this.nextGust = t + 1;
     this.nextBird = t + rand(3, 6);
+    this.nextToll = t + rand(9, 14);
+    this.nextChimeOk = t + 4;
     this.nextParam = 0;
     this._lastT = t;
   }
@@ -510,6 +514,64 @@ export class Audio {
     }
   }
 
+  // Carillon à vent : des tubes de métal fin (partiels inharmoniques d'une barre libre),
+  // accordés sur la gamme du jeu, qui s'entrechoquent quelques fois puis se taisent.
+  _windChime(t, strength, pan) {
+    const ctx = this.ctx;
+    const out = ctx.createGain();
+    out.gain.value = 0.8;
+    const p = ctx.createStereoPanner();
+    p.pan.value = Math.max(-0.8, Math.min(0.8, pan * 1.2));
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 7000;
+    out.connect(lp).connect(p).connect(this.far);
+    const tubes = [86, 88, 90, 93, 95];
+    const n = 2 + Math.round(Math.min(1, Math.max(0, strength)) * 3 + Math.random());
+    let at = t;
+    for (let i = 0; i < n; i++) {
+      const f = midi(pick(tubes));
+      const g = rand(0.006, 0.011) * (1 - i * 0.1);
+      for (const [r, amp, d] of [[1, 1, 2.6], [2.76, 0.32, 1.1], [5.4, 0.1, 0.5]]) {
+        const o = ctx.createOscillator();
+        o.frequency.value = f * r;
+        const e = ctx.createGain();
+        e.gain.setValueAtTime(0, at);
+        e.gain.linearRampToValueAtTime(g * amp, at + 0.003);
+        e.gain.setTargetAtTime(0, at + 0.003, d / 4);
+        o.connect(e).connect(out);
+        o.start(at);
+        o.stop(at + d + 0.2);
+      }
+      at += rand(0.14, 0.42);
+    }
+  }
+
+  // La cloche du pavillon, entendue de loin : attaque adoucie par la distance, presque
+  // tout dans la réverbération. Un rappel du lieu où mène le parcours.
+  _toll(t) {
+    const ctx = this.ctx;
+    const f0 = midi(62);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1500;
+    const out = ctx.createGain();
+    out.gain.value = 0.085;
+    out.connect(lp).connect(this.far);
+    for (const [r, amp, d] of [[0.5, 0.14, 9], [1, 0.15, 7], [1.19, 0.06, 5], [1.5, 0.04, 4], [2, 0.07, 3.5], [2.52, 0.025, 2.4]]) {
+      const o = ctx.createOscillator();
+      o.frequency.value = f0 * r;
+      o.detune.value = rand(-3, 3);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(amp, t + 0.03);
+      g.gain.setTargetAtTime(0, t + 0.03, d / 4.5);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + d + 0.5);
+    }
+  }
+
   // ---------- Boucle (appelée à chaque image) ----------
 
   update(speed, mode) {
@@ -554,9 +616,23 @@ export class Audio {
     if (now >= this.nextGust) {
       this.nextGust = now + rand(1.8, 4.5);
       const airy = this.scene === 'play' ? 1 : 1.35; // l'air du large, sur le titre et la fin
-      this.windGain.gain.setTargetAtTime(rand(0.05, 0.12) * airy, now, rand(0.8, 1.6));
+      const gust = rand(0.05, 0.12);
+      const pan = rand(-0.6, 0.6);
+      this.windGain.gain.setTargetAtTime(gust * airy, now, rand(0.8, 1.6));
       this.windFilter.frequency.setTargetAtTime(rand(300, 650), now, 1.5);
-      this.windPan.pan.setTargetAtTime(rand(-0.6, 0.6), now, 2.5);
+      this.windPan.pan.setTargetAtTime(pan, now, 2.5);
+      // Une rafale un peu forte fait tinter un carillon à vent, sur un balcon voisin,
+      // du côté d'où vient le souffle.
+      if (gust > 0.085 && now >= this.nextChimeOk && !this.paused && Math.random() < 0.55) {
+        this.nextChimeOk = now + rand(7, 14);
+        this._windChime(now + rand(0.6, 1.2), (gust - 0.085) / 0.035, pan);
+      }
+    }
+
+    // Sur le titre et la fin, la cloche du pavillon sonne de loin, de temps en temps.
+    if (now >= this.nextToll) {
+      this.nextToll = now + rand(30, 48);
+      if ((this.scene === 'title' || this.scene === 'end') && !this.paused) this._toll(now + 0.05);
     }
 
     if (now >= this.nextBird) {
@@ -655,6 +731,44 @@ export class Audio {
     src.stop(t + 2.5);
     this._slideVoice = { src, g };
     this._thump(t, 80, 0.05, 0.12);
+  }
+
+  // Une paume se pose (mur, rebord, muret) : une petite tape feutrée, du côté de la main.
+  // Sur un mur, la peau glisse un peu sur l'enduit ; sur un rebord, le son est plus mat.
+  // Deux mains qui se posent ensemble ne font pas un claquement : la seconde est adoucie.
+  touch(data = {}) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const pan = (data.side || 0) * 0.38;
+    const close = t - (this._lastTouch ?? -1) < 0.09;
+    this._lastTouch = t;
+    const k = (close ? 0.55 : 1) * (0.8 + Math.random() * 0.3);
+    const at = t + (close ? 0.012 : 0);
+    if (data.wall) {
+      this._noise(at, 0.09, { freq: rand(900, 1200), q: 1.2, gain: 0.03 * k, attack: 0.003, tau: 0.018, pan });
+      this._noise(at + 0.015, 0.16, { type: 'highpass', freq: rand(2600, 3400), q: 0.5, gain: 0.006 * k, attack: 0.02, tau: 0.05, pan });
+      this._thump(at, rand(130, 160), 0.035 * k, 0.07, pan);
+    } else {
+      this._noise(at, 0.08, { freq: rand(600, 820), q: 1.0, gain: 0.034 * k, attack: 0.003, tau: 0.016, pan });
+      this._thump(at, rand(105, 125), 0.045 * k, 0.08, pan);
+    }
+  }
+
+  // Le corps bascule par-dessus un rebord : un souffle bref et calme, et le froissement
+  // du tissu. Jamais d'ahanement : c'est un geste facile.
+  effort() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (t - (this._lastEffort ?? -9) < 0.6) return;
+    this._lastEffort = t;
+    const f = rand(700, 900);
+    // Expiration par le nez : deux bandes de bruit (comme deux formants), attaque douce.
+    this._noise(t, 0.42, { freq: f, sweep: f * 0.8, q: 1.6, gain: 0.024, attack: 0.07, tau: 0.11 });
+    this._noise(t + 0.01, 0.38, { freq: f * 2.9, sweep: f * 2.4, q: 2.2, gain: 0.01, attack: 0.08, tau: 0.09 });
+    // Tissu : quelques frottements aigus très courts
+    for (let i = 0; i < 3; i++) {
+      this._noise(t + 0.05 + i * rand(0.04, 0.07), 0.07, { type: 'highpass', freq: rand(3200, 4800), q: 0.6, gain: 0.005 * (1 - i * 0.25), attack: 0.006, tau: 0.02, pan: rand(-0.2, 0.2) });
+    }
   }
 
   chime(index = 1) {

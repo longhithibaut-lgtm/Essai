@@ -3,7 +3,8 @@
 // L'interface en jeu reste presque invisible : un point au centre, le nom du lieu
 // quand on y arrive, un anneau de lueurs quand on en cueille une, et des conseils
 // posés sur le monde. Jamais deux textes à la fois : le nom du lieu passe d'abord,
-// le conseil ensuite. Le titre et la fin sont posés sur le plan du soleil levant.
+// le conseil ensuite. Le titre et la fin sont posés sur deux plans fixes de la ville
+// du parcours (titlecam.js), le texte en colonne à gauche, côté soleil.
 
 const BASE_SENSITIVITY = 0.0022;
 const TEST = new URLSearchParams(location.search).has('test');
@@ -32,6 +33,7 @@ const PLACE_HOLD = 2.8; // secondes d'affichage du nom du lieu
 const PLACE_GAP = 18; // au moins tant de secondes de course entre deux noms de lieu
 const LIGHTS_HOLD = 3.4; // secondes d'affichage des lueurs après une cueillette
 const HINT_PATIENCE = 7; // un conseil en attente plus vieux que ça n'a plus de sens
+const SLOW_FIRST_FRAME = 4000; // ms : au-delà, pas d'animation d'entrée sur le titre
 
 function load(key, fallback) {
   try {
@@ -128,7 +130,7 @@ export class UI {
     this.orbs = 0;
     this.total = 12;
     this.pendingHint = null; // conseil qui attend que le nom du lieu s'efface
-    this.dawn = false; // la fin se lit sur le plan du soleil levant (voir main.js)
+    this.dawn = false; // la fin se lit sur le plan de la cloche (voir titlecam.js)
     this.pointer = { x: 0, y: 0 }; // position du pointeur (-1..1) : légère parallaxe du titre
     this._cp = undefined;
     this._respawning = false;
@@ -186,8 +188,8 @@ export class UI {
     }
   }
 
-  // La page de fin, d'où qu'on l'ouvre, se pose sur le soleil levant : la caméra
-  // rejoint le plan du titre et l'interface de jeu s'efface. Le changement se fait
+  // La page de fin, d'où qu'on l'ouvre, se pose au-dessus de la cloche : la caméra
+  // rejoint le plan de fin et l'interface de jeu s'efface. Le changement se fait
   // dès que la page devient visible (même par un script extérieur), avant toute image.
   _watchEnd() {
     const end = this.el.end;
@@ -210,6 +212,12 @@ export class UI {
 
   _toDawn() {
     if (this.dawn) return;
+    // Page ouverte sans passer par showEnd (script extérieur, test) : les mots de la
+    // fin se remplissent quand même, avec la promenade en cours, sans rien enregistrer.
+    if (!this._endFilled) {
+      const g = this.game;
+      this._fillEnd(g.runTime || 0, g.collected || 0, g.level?.orbs?.length || this.total, false);
+    }
     this.dawn = true;
     this.el.hud.hidden = true;
     this.el.body.dataset.screen = 'end';
@@ -243,11 +251,20 @@ export class UI {
     });
     el.home.addEventListener('click', () => {
       audio.uiBack?.();
-      game.reset();
-      game.state = 'title';
-      // Le décor ne change pas (le soleil levant), seuls les mots se remplacent.
-      this.screen('title');
-      this._clearVeil(900);
+      // Une respiration de lumière : on quitte la cloche, on retrouve le jardin du titre.
+      const back = () => {
+        game.reset();
+        game.state = 'title';
+        this.screen('title');
+        this._veil([1, 0], 1500);
+      };
+      if (TEST) return back();
+      el.home.disabled = true;
+      this._veil([this._veilOpacity(), 1], 650);
+      setTimeout(() => {
+        el.home.disabled = false;
+        back();
+      }, 680);
     });
 
     for (const b of document.querySelectorAll('[data-open]')) {
@@ -383,10 +400,35 @@ export class UI {
   ready() {
     this.el.loading.hidden = true;
     this.el.start.disabled = false;
-    if (!this._waking) this._veil([1, 0], 1400);
+    if (this._waking) {
+      // Le premier plan est rendu une fois sous le voile : les shaders de toute la ville
+      // se compilent et les ombres se posent avant que le jour se lève, pour que le
+      // lever du voile découvre une image déjà prête (et que la première image du
+      // titre ne fige pas l'écran pendant le fondu).
+      const t0 = performance.now();
+      this.game.frame(0);
+      // Sur une machine très lente (rendu logiciel, sans carte graphique), un lever de
+      // jour animé ne serait qu'une suite de photos : le titre composé s'affiche d'emblée.
+      if (performance.now() - t0 > SLOW_FIRST_FRAME) this._instant();
+      else this._wake();
+      // « Commencer » est déjà choisi : son point de lumière et son trait se dessinent.
+      requestAnimationFrame(() => {
+        if (this.current === 'title' && this.el.sheet.hidden && document.activeElement === document.body) this.el.start.focus({ preventScroll: true });
+      });
+    } else {
+      this._veil([1, 0], 1400);
+    }
   }
 
-  // La première image est à l'écran : le jour se lève.
+  _instant() {
+    this._waking = false;
+    if (this._veilAnim) this._veilAnim.cancel();
+    this.el.veil.classList.remove('on');
+    document.body.classList.remove('waking');
+    document.body.classList.add('instant');
+  }
+
+  // La première image est prête : le jour se lève.
   _wake() {
     if (!this._waking) return;
     this._waking = false;
@@ -409,10 +451,13 @@ export class UI {
     audio.setPaused?.(name === 'pause');
     audio.setScene?.(name === 'title' || name === 'end' ? name : 'play');
 
-    if (name === 'play' || name === 'pause') {
+    if (name !== 'end') {
+      // Le plan de la cloche ne vaut que pour la page de fin.
       this.dawn = false;
-      this.game.birds?.setVisible(false);
+      this._endFilled = false;
+      el.body.classList.remove('end-dawn');
     }
+    if (name === 'play' || name === 'pause') this.game.birds?.setVisible(false);
     if (name === 'play' && (prev === 'title' || prev === 'end' || this._restarting)) {
       // Le départ : un voile de lumière qui se dissipe, puis le nom du premier lieu.
       this._veil([0.95, 0], 2000);
@@ -436,11 +481,8 @@ export class UI {
     }
   }
 
-  // Abaisse le voile depuis son opacité du moment (quel que soit le fondu en cours).
-  _clearVeil(duration) {
-    const v = this.el.veil;
-    const o = parseFloat(getComputedStyle(v).opacity) || 0;
-    if (o > 0.01) this._veil([o, 0], duration);
+  _veilOpacity() {
+    return parseFloat(getComputedStyle(this.el.veil).opacity) || 0;
   }
 
   _veil(frames, duration, delay = 0) {
@@ -464,7 +506,10 @@ export class UI {
     this._paintJourney(0);
     const ends = document.querySelectorAll('.journey-ends span');
     const cps = this.game.level?.checkpoints;
-    if (ends.length === 2 && cps?.length) ends[0].textContent = this._placeName(cps[0]);
+    if (ends.length === 2 && cps?.length) {
+      ends[0].textContent = this._placeName(cps[0]);
+      ends[1].textContent = this._placeName(cps[cps.length - 1]);
+    }
   }
 
   _paintJourney(index) {
@@ -559,6 +604,13 @@ export class UI {
     }
   }
 
+  // Légende du plan fixe (titre, fin) : le nom du lieu qu'on regarde.
+  setStill(name) {
+    if (!name || name === this._still) return;
+    this._still = name;
+    for (const n of document.querySelectorAll('.still-name')) n.textContent = name;
+  }
+
   toast(text) {
     this.el.toast.textContent = text;
     this.el.toast.classList.add('show');
@@ -625,7 +677,7 @@ export class UI {
     }
 
     // Arrivée à la cloche : la lumière monte doucement, puis la dernière page
-    // se pose sur le soleil levant.
+    // se pose sur le plan de la cloche.
     const fin = game.state === 'finished';
     if (fin && !this._finished) {
       this.hideHintNow();
@@ -637,6 +689,21 @@ export class UI {
       if (!TEST) this._veil([0, 1], 2000);
     }
     this._finished = fin;
+  }
+
+  // Les mots de la page de fin. Avec keep, la promenade compte pour le record.
+  _fillEnd(time, orbs, total, keep) {
+    const { el } = this;
+    const best = load('best', null);
+    const isBest = best === null || time < best;
+    if (keep && isBest) save('best', time);
+    this._endFilled = true;
+    el.endOrbs.textContent = orbs === 0 ? 'Aucune, cette fois' : orbs >= total ? `Les ${total}, toutes` : `${orbs} sur ${total}`;
+    el.endTime.textContent = formatDuration(time);
+    el.endBest.textContent = best === null ? 'Ta première promenade' : isBest ? 'Ta promenade la plus fluide' : `La plus fluide : ${formatDuration(best)}`;
+    el.endLine.textContent = orbs >= total
+      ? 'Toutes les lueurs t’ont suivi jusqu’à la cloche. Le matin s’est levé avec toi.'
+      : 'Le matin s’est levé avec toi. Quelques lueurs attendent encore, quand tu voudras.';
   }
 
   _fillPause() {
@@ -651,16 +718,8 @@ export class UI {
 
   showEnd(time, orbs, total) {
     const { el } = this;
-    const best = load('best', null);
-    const isBest = best === null || time < best;
-    if (isBest) save('best', time);
-    el.endOrbs.textContent = orbs === 0 ? 'Aucune, cette fois' : orbs >= total ? `Les ${total}, toutes` : `${orbs} sur ${total}`;
-    el.endTime.textContent = formatDuration(time);
-    el.endBest.textContent = best === null ? 'Ta première promenade' : isBest ? 'Ta promenade la plus fluide' : `La plus fluide : ${formatDuration(best)}`;
-    el.endLine.textContent = orbs >= total
-      ? 'Toutes les lueurs t’ont suivi jusqu’à la cloche. Le matin s’est levé avec toi.'
-      : 'Le matin s’est levé avec toi. Quelques lueurs attendent encore, quand tu voudras.';
-    // La caméra rejoint le plan du soleil levant (main.js) sous le voile : pas de flou derrière.
+    this._fillEnd(time, orbs, total, true);
+    // La caméra rejoint le plan de la cloche (titlecam.js) sous le voile : pas de flou derrière.
     this.dawn = true;
     el.body.classList.add('end-dawn');
     this.screen('end');
