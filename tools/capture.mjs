@@ -102,7 +102,7 @@ async function newPage(browser, url, errors) {
       return route.abort();
     }
   });
-  await page.goto(url, { waitUntil: 'load' });
+  await page.goto(url, { waitUntil: 'load', timeout: 180000 });
   return page;
 }
 
@@ -131,7 +131,7 @@ async function main() {
 
   try {
     const page = await newPage(browser, base + 'index.html?test', errors);
-    await page.waitForFunction(() => window.__aube && window.__aube.ready, null, { timeout: 60000 });
+    await page.waitForFunction(() => window.__aube && window.__aube.ready, null, { timeout: 180000 });
     const shot = async (file) => {
       await page.evaluate(() => window.__aube.render());
       await page.screenshot({ path: file });
@@ -222,7 +222,7 @@ async function main() {
       await p2.waitForTimeout(4000);
       await p2.screenshot({ path: path.join(out, 'ui', 'title.png') });
       const p3 = await newPage(browser, base + 'index.html?test', errors);
-      await p3.waitForFunction(() => window.__aube && window.__aube.ready, null, { timeout: 60000 });
+      await p3.waitForFunction(() => window.__aube && window.__aube.ready, null, { timeout: 180000 });
       await p3.evaluate(() => { const a = window.__aube; a.reset(); a.startBot(); a.step(1.2); });
       await p3.waitForTimeout(800);
       await p3.evaluate(() => window.__aube.render());

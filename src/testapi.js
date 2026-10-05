@@ -100,6 +100,8 @@ export function installTestAPI(game) {
       game.reset();
       game.state = 'playing';
       game.events.length = 0;
+      game.simTime = 0;
+      game.acc = 0;
       game.freeCamera = null;
       game.player.updateCamera(0, 1);
       game.world.update(0, game.camera, game.player.pos);
