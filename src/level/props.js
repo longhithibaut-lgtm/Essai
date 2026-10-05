@@ -115,12 +115,12 @@ function sculptFace(batch, bb, face, shaftTop, yLow, frameCol, o) {
 }
 
 // Corniche saillante : larmier, modillons, frise et cimaise.
-function cornice(batch, bb, shaftTop, ov, col, full, faces) {
+function cornice(batch, bb, shaftTop, ov, col, full, faces, bevel = 0) {
   const { minX, maxX, minZ, maxZ } = bb;
   const w = maxX - minX, d = maxZ - minZ;
   const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
   // Larmier (débord principal) et cimaise
-  batch.box(cx, shaftTop - 0.17, cz, w + ov * 2, 0.34, d + ov * 2, { kind: K.PLASTER, color: col });
+  batch.box(cx, shaftTop - 0.17, cz, w + ov * 2, 0.34, d + ov * 2, { kind: K.PLASTER, color: col, bevel });
   batch.box(cx, shaftTop - 0.39, cz, w + ov * 1.2, 0.1, d + ov * 1.2, { kind: K.PLASTER, color: col, skipTop: true });
   // Frise
   batch.box(cx, shaftTop - 0.95, cz, w + 0.1, 0.22, d + 0.1, { kind: K.PLASTER, color: col, skipTop: true });
@@ -159,21 +159,24 @@ export function building(ctx, o) {
   const faces = o.faces ?? FACES;
   const bb = { minX, maxX, minZ, maxZ, w, d, style: st };
 
+  // Près du parcours, arêtes abattues pour de vrai : rives des terrasses, angles des
+  // fûts et corniches dessinent le volume au soleil (au loin, boîtes simples).
+  const bv = o.bevel ?? (b === ctx.arch ? 1 : 0);
   if (deck === 'pave') {
-    b.box(cx, top - deckT / 2, cz, w, deckT, d, { kind: o.deckKind ?? K.PAVE, color: o.deckColor ?? PAL.deck, style: o.tile ?? 0.55, skipBottom: true });
+    b.box(cx, top - deckT / 2, cz, w, deckT, d, { kind: o.deckKind ?? K.PAVE, color: o.deckColor ?? PAL.deck, style: o.tile ?? 0.55, skipBottom: true, bevel: 0.025 * bv });
   }
   const shaftH = shaftTop - bottom;
-  b.box(cx, bottom + shaftH / 2, cz, w, shaftH, d, { kind: o.sideKind ?? (o.plain ? K.PLASTER : K.FACADE), color, style: st, skipBottom: true, skipTop: deck === 'pave' });
+  b.box(cx, bottom + shaftH / 2, cz, w, shaftH, d, { kind: o.sideKind ?? (o.plain ? K.PLASTER : K.FACADE), color, style: st, skipBottom: true, skipTop: deck === 'pave', bevel: 0.04 * bv });
   if (hasCornice) {
     const ov = o.corniceOver ?? (detail === 'full' && !o.plain ? 0.42 : 0.2);
     // Sous un toit-terrasse, la corniche descend de quelques centimètres : son dessus
     // ne recouvre plus l'étanchéité (et la tête du mur forme une petite rive).
     const cTop = shaftTop - (deck === 'roof' ? 0.07 : 0);
     if (o.plain || !detail) {
-      b.box(cx, cTop - 0.22, cz, w + ov * 2, 0.44, d + ov * 2, { kind: K.PLASTER, color: corniceCol });
-      b.box(cx, cTop - 0.56, cz, w + ov, 0.24, d + ov, { kind: K.PLASTER, color: corniceCol });
+      b.box(cx, cTop - 0.22, cz, w + ov * 2, 0.44, d + ov * 2, { kind: K.PLASTER, color: corniceCol, bevel: 0.035 * bv });
+      b.box(cx, cTop - 0.56, cz, w + ov, 0.24, d + ov, { kind: K.PLASTER, color: corniceCol, bevel: 0.025 * bv, skipTop: true });
     } else {
-      cornice(b, bb, cTop, ov, corniceCol, detail === 'full', faces);
+      cornice(b, bb, cTop, ov, corniceCol, detail === 'full', faces, 0.03 * bv);
     }
   }
   // Relevés d'étanchéité en rive du toit, coiffés d'un solin de zinc
@@ -322,7 +325,7 @@ export function acUnit(ctx, x, y, z, o = {}) {
   const rot = o.rotY ?? 0;
   const w = 1.3 * s, h = 0.95 * s, d = 0.85 * s;
   if (b !== ctx.far) b.box(x, y + 0.06, z, w + 0.1, 0.12, d + 0.1, { kind: K.METAL, color: PAL.metalDark, rotY: rot });
-  b.box(x, y + 0.12 + h / 2, z, w, h, d, { kind: K.VENT, color: o.color ?? PAL.metalLight, rotY: rot });
+  b.box(x, y + 0.12 + h / 2, z, w, h, d, { kind: K.VENT, color: o.color ?? PAL.metalLight, rotY: rot, bevel: b !== ctx.far ? 0.035 : 0 });
   ao(ctx, x, z, w + 0.6, d + 0.6, y, 1, rot);
   if (o.collide && ctx.physics) {
     const r = Math.max(w, d) / 2;
@@ -354,8 +357,8 @@ export function vent(ctx, x, y, z, o = {}) {
 export function chimney(ctx, x, y, z, o = {}) {
   const b = o.batch ?? ctx.arch;
   const w = o.w ?? 0.7, h = o.h ?? 1.4;
-  b.box(x, y + h / 2, z, w, h, w, { kind: K.PLASTER, color: o.color ?? PAL.plaster });
-  b.box(x, y + h + 0.05, z, w + 0.14, 0.1, w + 0.14, { kind: K.STONE, color: PAL.coping });
+  b.box(x, y + h / 2, z, w, h, w, { kind: K.PLASTER, color: o.color ?? PAL.plaster, bevel: 0.03, skipBottom: true });
+  b.box(x, y + h + 0.05, z, w + 0.14, 0.1, w + 0.14, { kind: K.STONE, color: PAL.coping, bevel: 0.025 });
   b.box(x, y + h + 0.32, z, w * 0.5, 0.06, w * 0.5, { kind: K.PLASTER, color: PAL.coping });
   for (const [lx, lz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) b.box(x + lx * w * 0.22, y + h + 0.2, z + lz * w * 0.22, 0.05, 0.2, 0.05, { kind: K.PLASTER, color: PAL.coping });
 }
@@ -378,9 +381,9 @@ export function hut(ctx, x, y, z, o = {}) {
   const rot = o.rotY ?? 0;
   const cs = Math.cos(rot), sn = Math.sin(rot);
   const L = (lx, lz) => [x + lx * cs + lz * sn, z - lx * sn + lz * cs];
-  b.box(x, y + h / 2, z, w, h, d, { kind: K.PLASTER, color: o.color ?? PAL.plasterWarm, rotY: rot });
+  b.box(x, y + h / 2, z, w, h, d, { kind: K.PLASTER, color: o.color ?? PAL.plasterWarm, rotY: rot, bevel: 0.04, skipBottom: true });
   ao(ctx, x, z, w + 0.8, d + 0.8, y, 1, rot);
-  b.box(x, y + h + 0.09, z, w + 0.3, 0.18, d + 0.3, { kind: K.STONE, color: PAL.coping, rotY: rot });
+  b.box(x, y + h + 0.09, z, w + 0.3, 0.18, d + 0.3, { kind: K.STONE, color: PAL.coping, rotY: rot, bevel: 0.035 });
   // Porte sur la face +z locale
   const [dx, dz] = L(0, d / 2 + 0.02);
   b.box(dx, y + 1.05, dz, 0.95, 2.1, 0.06, { kind: K.WOOD, color: o.door ?? PAL.woodDark, rotY: rot });
@@ -404,7 +407,7 @@ export function hut(ctx, x, y, z, o = {}) {
 export function planter(ctx, x, y, z, w, d, o = {}) {
   const b = o.batch ?? ctx.arch;
   const h = o.h ?? 0.55;
-  b.box(x, y + h / 2, z, w, h, d, { kind: o.kind ?? K.STONE, color: o.color ?? PAL.stone });
+  b.box(x, y + h / 2, z, w, h, d, { kind: o.kind ?? K.STONE, color: o.color ?? PAL.stone, bevel: 0.04, skipBottom: true });
   ao(ctx, x, z, w + 0.5, d + 0.5, y, 0.9);
   b.box(x, y + h - 0.02, z, w - 0.16, 0.04, d - 0.16, { kind: K.SOIL, color: 0x6b5444 });
   if (o.collide !== false && ctx.physics) ctx.solid([x - w / 2, y, z - d / 2], [x + w / 2, y + h, z + d / 2], 'planter');
@@ -441,7 +444,7 @@ export function bench(ctx, x, y, z, o = {}) {
 export function lantern(ctx, x, y, z, o = {}) {
   const b = o.batch ?? ctx.arch;
   const h = o.h ?? 1.6;
-  b.box(x, y + 0.06, z, 0.3, 0.12, 0.3, { kind: K.STONE, color: PAL.stone });
+  b.box(x, y + 0.06, z, 0.3, 0.12, 0.3, { kind: K.STONE, color: PAL.stone, bevel: 0.02, skipBottom: true });
   ao(ctx, x, z, 0.8, 0.8, y, 0.7);
   b.box(x, y + h / 2, z, 0.12, h, 0.12, { kind: K.WOOD, color: PAL.woodDark });
   b.box(x, y + h + 0.2, z, 0.3, 0.38, 0.3, { kind: K.GLOW, color: PAL.glow });
@@ -463,13 +466,13 @@ export function pot(ctx, x, y, z, o = {}) {
 
 export function skylight(ctx, x, y, z, w, d, o = {}) {
   const b = o.batch ?? ctx.arch;
-  b.box(x, y + 0.2, z, w, 0.4, d, { kind: K.METAL, color: PAL.metalLight });
+  b.box(x, y + 0.2, z, w, 0.4, d, { kind: K.METAL, color: PAL.metalLight, bevel: 0.03, skipBottom: true });
   b.box(x, y + 0.42, z, w - 0.12, 0.05, d - 0.12, { kind: K.GLASS, color: 0xb8c4d0 });
 }
 
 export function crate(ctx, x, y, z, s = 0.6, o = {}) {
   const b = o.batch ?? ctx.arch;
-  b.box(x, y + s / 2, z, s, s, s, { kind: K.WOOD, color: o.color ?? PAL.woodPale, rotY: o.rotY ?? 0 });
+  b.box(x, y + s / 2, z, s, s, s, { kind: K.WOOD, color: o.color ?? PAL.woodPale, rotY: o.rotY ?? 0, bevel: 0.025 });
   ao(ctx, x, z, s + 0.4, s + 0.4, y, 0.8);
 }
 

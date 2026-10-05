@@ -158,10 +158,10 @@ export function buildLevel(scene, physics, materials) {
   {
     const yb = 3.25;
     for (const [px, pz] of [[-3.85, -46.6], [2.85, -46.6], [-3.85, -49.4], [2.85, -49.4]]) {
-      A.box(px, 2.0 + (yb - 2.0) / 2, pz, 0.3, yb - 2.0, 0.3, { kind: K.WOOD, color: PAL.woodDark });
+      A.box(px, 2.0 + (yb - 2.0) / 2, pz, 0.3, yb - 2.0, 0.3, { kind: K.WOOD, color: PAL.woodDark, bevel: 0.025, skipBottom: true });
       ctx.solid([px - 0.15, 2.0, pz - 0.15], [px + 0.15, yb, pz + 0.15], 'post');
     }
-    for (const pz of [-46.6, -49.4]) A.box(-0.5, yb + 0.13, pz, 7.4, 0.26, 0.24, { kind: K.WOOD, color: PAL.woodDark });
+    for (const pz of [-46.6, -49.4]) A.box(-0.5, yb + 0.13, pz, 7.4, 0.26, 0.24, { kind: K.WOOD, color: PAL.woodDark, bevel: 0.025 });
     for (let x = -3.9; x <= 2.95; x += 0.55) A.box(x, yb + 0.35, -48, 0.09, 0.18, 4.4, { kind: K.WOOD, color: PAL.wood });
     ctx.solid([-4.1, yb, -49.6], [3.1, yb + 0.45, -46.4], 'pergola');
     A.boxMinMax(-3.7, 1.95, -50.3, 2.7, 2.012, -45.7, { kind: K.WOOD, color: PAL.woodPale });
@@ -328,8 +328,8 @@ export function buildLevel(scene, physics, materials) {
   roofDress(deco, bKL, { garden: true, laundry: 0, parapet: false });
   hedge(deco, 4.15, -171.6, 4.95, -148.4, 2.6, { h: 0.85 });
   for (const z of [-156.6, -163.6, -170.4]) {
-    A.boxMinMax(5.0, K_TOP, z - 0.3, 5.34, 2.05, z + 0.3, { kind: K.STONE, color: 0xddcbb8 });
-    A.boxMinMax(5.0, 2.05, z - 0.34, 5.24, 2.32, z + 0.34, { kind: K.STONE, color: PAL.coping });
+    A.boxMinMax(5.0, K_TOP, z - 0.3, 5.34, 2.05, z + 0.3, { kind: K.STONE, color: 0xddcbb8, bevel: 0.03, skipBottom: true });
+    A.boxMinMax(5.0, 2.05, z - 0.34, 5.24, 2.32, z + 0.34, { kind: K.STONE, color: PAL.coping, bevel: 0.025 });
     shadows.add(5.17, z, 1.2, 1.3, K_TOP, 0.9);
   }
   {
@@ -363,8 +363,8 @@ export function buildLevel(scene, physics, materials) {
   shiftedSlabs(ctx, 5.4, 12.6, -171.5, -147.5, K_TOP, { tile: 0.1, n: 14, rand: slabRand, color: 0xe8c6ae, gravel: 0.35 });
   drain(ctx, 11.0, K_TOP, -163.8);
   // Obstacle 1 : jardinière de pierre à franchir
-  A.boxMinMax(6.0, K_TOP, -153.8, 12.0, K_TOP + 0.84, -153.0, { kind: K.STONE, color: PAL.stone });
-  A.boxMinMax(5.95, K_TOP + 0.84, -153.85, 12.05, K_TOP + 0.9, -152.95, { kind: K.CORAL, color: PAL.coral });
+  A.boxMinMax(6.0, K_TOP, -153.8, 12.0, K_TOP + 0.84, -153.0, { kind: K.STONE, color: PAL.stone, bevel: 0.035, skipBottom: true, skipTop: true });
+  A.boxMinMax(5.95, K_TOP + 0.84, -153.85, 12.05, K_TOP + 0.9, -152.95, { kind: K.CORAL, color: PAL.coral, bevel: 0.018 });
   ctx.solid([6.0, K_TOP, -153.8], [12.0, K_TOP + 0.9, -153.0], 'vault');
   for (const x of [5.5, 12.5]) {
     pot(ctx, x, K_TOP, -153.4, { r: 0.32, collide: true });
@@ -373,7 +373,7 @@ export function buildLevel(scene, physics, materials) {
   // Obstacle 2 : poutre basse drapée (glissade)
   {
     const z0 = -161.5, z1 = -160.0, yb = K_TOP + 1.25;
-    A.boxMinMax(5.0, yb, z0, 13.0, yb + 0.4, z1, { kind: K.WOOD, color: PAL.wood });
+    A.boxMinMax(5.0, yb, z0, 13.0, yb + 0.4, z1, { kind: K.WOOD, color: PAL.wood, bevel: 0.03 });
     ctx.solid([5.0, yb, z0], [13.0, yb + 0.4, z1], 'beam');
     for (const x of [5.15, 12.85]) {
       A.boxMinMax(x - 0.15, K_TOP, z0 + 0.45, x + 0.15, yb, z1 - 0.45, { kind: K.WOOD, color: PAL.woodDark });
@@ -389,8 +389,8 @@ export function buildLevel(scene, physics, materials) {
     }
   }
   // Obstacle 3 : banc-jardinière bas
-  A.boxMinMax(6.5, K_TOP, -166.6, 11.0, K_TOP + 0.56, -166.0, { kind: K.STONE, color: PAL.stone });
-  A.boxMinMax(6.45, K_TOP + 0.56, -166.65, 11.05, K_TOP + 0.62, -165.95, { kind: K.CORAL, color: PAL.coral });
+  A.boxMinMax(6.5, K_TOP, -166.6, 11.0, K_TOP + 0.56, -166.0, { kind: K.STONE, color: PAL.stone, bevel: 0.035, skipBottom: true, skipTop: true });
+  A.boxMinMax(6.45, K_TOP + 0.56, -166.65, 11.05, K_TOP + 0.62, -165.95, { kind: K.CORAL, color: PAL.coral, bevel: 0.018 });
   ctx.solid([6.5, K_TOP, -166.6], [11.0, K_TOP + 0.62, -166.0], 'vault');
   crate(ctx, 12.3, K_TOP, -158.0, 0.6);
   crate(ctx, 12.35, K_TOP + 0.6, -158.05, 0.45, { rotY: 0.4 });
@@ -410,25 +410,25 @@ export function buildLevel(scene, physics, materials) {
   for (let k = 1; k <= 6; k++) {
     const zf = -174.5 - 0.6 * (k - 1);
     const top = M_TOP + 0.3 * k;
-    A.boxMinMax(6.0, M_TOP, -180, 11.0, top, zf, { kind: K.STONE, color: k % 2 ? PAL.stone : PAL.stoneWarm });
+    A.boxMinMax(6.0, M_TOP, -180, 11.0, top, zf, { kind: K.STONE, color: k % 2 ? PAL.stone : PAL.stoneWarm, bevel: 0.022, skipBottom: true });
     ctx.solid([6.0, M_TOP, -180], [11.0, top, zf], 'stairs');
   }
   for (const x of [5.85, 11.15]) {
-    A.boxMinMax(x - 0.15, M_TOP, -180, x + 0.15, M_TOP + 2.35, -177.6, { kind: K.PLASTER, color: PAL.plaster });
-    A.boxMinMax(x - 0.15, M_TOP, -177.6, x + 0.15, M_TOP + 1.2, -174.5, { kind: K.PLASTER, color: PAL.plaster });
+    A.boxMinMax(x - 0.15, M_TOP, -180, x + 0.15, M_TOP + 2.35, -177.6, { kind: K.PLASTER, color: PAL.plaster, bevel: 0.03, skipBottom: true });
+    A.boxMinMax(x - 0.15, M_TOP, -177.6, x + 0.15, M_TOP + 1.2, -174.5, { kind: K.PLASTER, color: PAL.plaster, bevel: 0.03, skipBottom: true });
     ctx.solid([x - 0.15, M_TOP, -180], [x + 0.15, M_TOP + 2.35, -174.5], 'wall');
   }
   // Portique corail au sommet des marches
   {
     const y0 = M_TOP + 1.8;
     for (const x of [6.25, 10.75]) {
-      A.box(x, y0 + 1.9, -179.55, 0.42, 3.8, 0.42, { kind: K.CORAL, color: PAL.coralSoft });
-      A.box(x, y0 + 0.1, -179.55, 0.6, 0.2, 0.6, { kind: K.STONE, color: PAL.coping });
+      A.box(x, y0 + 1.9, -179.55, 0.42, 3.8, 0.42, { kind: K.CORAL, color: PAL.coralSoft, bevel: 0.03 });
+      A.box(x, y0 + 0.1, -179.55, 0.6, 0.2, 0.6, { kind: K.STONE, color: PAL.coping, bevel: 0.03 });
       ctx.solid([x - 0.21, y0, -179.76], [x + 0.21, y0 + 3.8, -179.34], 'post');
     }
-    A.box(8.5, y0 + 3.95, -179.55, 6.2, 0.34, 0.55, { kind: K.CORAL, color: PAL.coralSoft });
-    A.box(8.5, y0 + 4.2, -179.55, 6.8, 0.18, 0.7, { kind: K.WOOD, color: PAL.woodDark });
-    A.box(8.5, y0 + 3.25, -179.55, 4.6, 0.18, 0.3, { kind: K.CORAL, color: PAL.coralSoft });
+    A.box(8.5, y0 + 3.95, -179.55, 6.2, 0.34, 0.55, { kind: K.CORAL, color: PAL.coralSoft, bevel: 0.03 });
+    A.box(8.5, y0 + 4.2, -179.55, 6.8, 0.18, 0.7, { kind: K.WOOD, color: PAL.woodDark, bevel: 0.03 });
+    A.box(8.5, y0 + 3.25, -179.55, 4.6, 0.18, 0.3, { kind: K.CORAL, color: PAL.coralSoft, bevel: 0.025 });
     A.box(8.5, y0 + 3.55, -179.5, 0.5, 0.42, 0.06, { kind: K.WOOD, color: PAL.woodDark });
   }
   for (const [x, z] of [[4.9, -173.2], [13.1, -173.2], [4.9, -179.0], [13.1, -179.0]]) {
@@ -496,17 +496,17 @@ export function buildLevel(scene, physics, materials) {
   inlay(ctx, 5.6, 11.4, -202.9, -197.1, N_TOP, { tile: 0.5, color: 0xeadfd2, h: 0.01 });
   shiftedSlabs(ctx, 2.0, 15.0, -209.4, -203.4, N_TOP, { tile: 1.0, n: 5, rand: slabRand, color: 0xf3ece4 });
   for (const [px, pz] of [[6.8, -198.3], [10.2, -198.3], [6.8, -201.7], [10.2, -201.7]]) {
-    A.box(px, N_TOP + 1.6, pz, 0.32, 3.2, 0.32, { kind: K.WOOD, color: PAL.woodDark });
-    A.box(px, N_TOP + 0.08, pz, 0.5, 0.16, 0.5, { kind: K.STONE, color: PAL.coping });
+    A.box(px, N_TOP + 1.6, pz, 0.32, 3.2, 0.32, { kind: K.WOOD, color: PAL.woodDark, bevel: 0.03 });
+    A.box(px, N_TOP + 0.08, pz, 0.5, 0.16, 0.5, { kind: K.STONE, color: PAL.coping, bevel: 0.03, skipBottom: true });
     ctx.solid([px - 0.16, N_TOP, pz - 0.16], [px + 0.16, N_TOP + 3.2, pz + 0.16], 'post');
   }
-  A.box(8.5, N_TOP + 3.35, -200, 5.0, 0.3, 4.8, { kind: K.WOOD, color: PAL.wood });
-  A.box(8.5, N_TOP + 3.6, -200, 4.2, 0.22, 4.0, { kind: K.PLASTER, color: PAL.coping });
-  A.box(8.5, N_TOP + 3.8, -200, 3.2, 0.2, 3.0, { kind: K.PLASTER, color: PAL.coping });
-  A.box(8.5, N_TOP + 4.0, -200, 1.6, 0.22, 1.4, { kind: K.CORAL, color: PAL.coralSoft });
+  A.box(8.5, N_TOP + 3.35, -200, 5.0, 0.3, 4.8, { kind: K.WOOD, color: PAL.wood, bevel: 0.04 });
+  A.box(8.5, N_TOP + 3.6, -200, 4.2, 0.22, 4.0, { kind: K.PLASTER, color: PAL.coping, bevel: 0.035 });
+  A.box(8.5, N_TOP + 3.8, -200, 3.2, 0.2, 3.0, { kind: K.PLASTER, color: PAL.coping, bevel: 0.035 });
+  A.box(8.5, N_TOP + 4.0, -200, 1.6, 0.22, 1.4, { kind: K.CORAL, color: PAL.coralSoft, bevel: 0.03 });
   A.box(8.5, N_TOP + 3.12, -200, 0.12, 0.2, 0.12, { kind: K.METAL, color: PAL.metalDark });
   // Socle de pierre, lanternes suspendues aux angles du toit
-  A.boxMinMax(6.2, N_TOP, -202.3, 10.8, N_TOP + 0.14, -197.7, { kind: K.STONE, color: PAL.coping });
+  A.boxMinMax(6.2, N_TOP, -202.3, 10.8, N_TOP + 0.14, -197.7, { kind: K.STONE, color: PAL.coping, bevel: 0.03, skipBottom: true });
   ctx.solid([6.2, N_TOP, -202.3], [10.8, N_TOP + 0.14, -197.7], 'plinth');
   for (const [px, pz] of [[6.2, -197.8], [10.8, -197.8], [6.2, -202.2], [10.8, -202.2]]) {
     A.tube([px, N_TOP + 3.2, pz], [px, N_TOP + 2.75, pz], 0.01, 3, { kind: K.METAL, color: PAL.metalDark });

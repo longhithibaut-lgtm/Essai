@@ -56,8 +56,13 @@ export class Batch {
   tri(a, b, c) { this.idx.push(a, b, c); }
   quadIdx(a, b, c, d) { this.idx.push(a, b, c, a, c, d); }
 
-  // Boîte centrée en (cx, cy, cz). o : { kind, color, style, rotY, skipBottom, skipTop, shadeTop }
+  // Boîte centrée en (cx, cy, cz). o : { kind, color, style, rotY, skipBottom, skipTop, shadeTop, bevel }
+  // o.bevel : arêtes abattues pour de vrai (chanfrein à 45° de cette largeur, en mètres).
   box(cx, cy, cz, w, h, d, o = {}) {
+    if (o.bevel && o.bevel > 0.004) {
+      const c = Math.min(o.bevel, w * 0.3, h * 0.3, d * 0.3);
+      if (c > 0.004) return this.bevelBox(cx, cy, cz, w, h, d, c, o);
+    }
     const kind = o.kind ?? K.PLASTER;
     const rgb = toLinear(o.color ?? 0xf3ece6);
     const st = o.style ?? 0;
@@ -85,6 +90,65 @@ export class Batch {
     face([[-hw, hh, -hd], [-hw, -hh, -hd], [-hw, -hh, hd], [-hw, hh, hd]], [-1, 0, 0], d, h, [[0, 0], [0, h], [d, h], [d, 0]]);
     if (!o.skipTop) face([[-hw, hh, -hd], [-hw, hh, hd], [hw, hh, hd], [hw, hh, -hd]], [0, 1, 0], w, d, [[0, 0], [0, d], [w, d], [w, 0]]);
     if (!o.skipBottom) face([[-hw, -hh, hd], [-hw, -hh, -hd], [hw, -hh, -hd], [hw, -hh, hd]], [0, -1, 0], w, d, [[0, d], [0, 0], [w, 0], [w, d]]);
+  }
+
+  // Boîte chanfreinée : faces principales réduites du chanfrein (UV toujours comptés
+  // depuis l'arête vive, pour rester alignés sur les boîtes voisines), bandes à 45° le
+  // long des arêtes (elles prennent le soleil ou s'assombrissent : le volume se dessine
+  // à distance de jeu) et petits triangles aux coins. Sans dessous (skipBottom), les
+  // arêtes basses restent vives et les chanfreins verticaux descendent jusqu'au pied.
+  bevelBox(cx, cy, cz, w, h, d, c, o = {}) {
+    const kind = o.kind ?? K.PLASTER;
+    const kb = kind + NO_BEVEL;
+    const rgb = toLinear(o.color ?? 0xf3ece6);
+    const st = o.style ?? 0;
+    const hw = w / 2, hh = h / 2, hd = d / 2;
+    const rot = o.rotY ?? 0;
+    const cs = Math.cos(rot), sn = Math.sin(rot);
+    const P = (lx, ly, lz) => [cx + lx * cs + lz * sn, cy + ly, cz - lx * sn + lz * cs];
+    const N = (nx, ny, nz) => [nx * cs + nz * sn, ny, -nx * sn + nz * cs];
+    const top = !o.skipTop, bot = !o.skipBottom;
+    const yHi = top ? hh - c : hh, yLo = bot ? -hh + c : -hh;
+    // quadrilatère (ou triangle) orienté d'après la normale voulue
+    const poly = (pts, normal, k, fw, fh, uvs) => {
+      const l = Math.hypot(...normal);
+      const nn = N(normal[0] / l, normal[1] / l, normal[2] / l);
+      const q = pts.map((p) => P(...p));
+      const e1 = [q[1][0] - q[0][0], q[1][1] - q[0][1], q[1][2] - q[0][2]];
+      const e2 = [q[2][0] - q[0][0], q[2][1] - q[0][1], q[2][2] - q[0][2]];
+      const cr = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+      const flip = cr[0] * nn[0] + cr[1] * nn[1] + cr[2] * nn[2] < 0;
+      const ids = q.map((p, i) => this.vertex(p[0], p[1], p[2], nn[0], nn[1], nn[2], uvs[i][0], uvs[i][1], rgb, k, fw, fh, st));
+      if (ids.length === 3) {
+        if (flip) this.tri(ids[0], ids[2], ids[1]); else this.tri(ids[0], ids[1], ids[2]);
+      } else if (flip) this.quadIdx(ids[0], ids[3], ids[2], ids[1]);
+      else this.quadIdx(ids[0], ids[1], ids[2], ids[3]);
+    };
+    const vTop = top ? c : 0, vBot = h - (bot ? c : 0);
+    // Côtés : u depuis la gauche vu de l'extérieur, v depuis le haut (comme box())
+    poly([[-hw + c, yHi, hd], [-hw + c, yLo, hd], [hw - c, yLo, hd], [hw - c, yHi, hd]], [0, 0, 1], kind, w, h, [[c, vTop], [c, vBot], [w - c, vBot], [w - c, vTop]]);
+    poly([[hw - c, yHi, -hd], [hw - c, yLo, -hd], [-hw + c, yLo, -hd], [-hw + c, yHi, -hd]], [0, 0, -1], kind, w, h, [[c, vTop], [c, vBot], [w - c, vBot], [w - c, vTop]]);
+    poly([[hw, yHi, hd - c], [hw, yLo, hd - c], [hw, yLo, -hd + c], [hw, yHi, -hd + c]], [1, 0, 0], kind, d, h, [[c, vTop], [c, vBot], [d - c, vBot], [d - c, vTop]]);
+    poly([[-hw, yHi, -hd + c], [-hw, yLo, -hd + c], [-hw, yLo, hd - c], [-hw, yHi, hd - c]], [-1, 0, 0], kind, d, h, [[c, vTop], [c, vBot], [d - c, vBot], [d - c, vTop]]);
+    if (top) poly([[-hw + c, hh, -hd + c], [-hw + c, hh, hd - c], [hw - c, hh, hd - c], [hw - c, hh, -hd + c]], [0, 1, 0], kind, w, d, [[c, c], [c, d - c], [w - c, d - c], [w - c, c]]);
+    if (bot) poly([[-hw + c, -hh, hd - c], [-hw + c, -hh, -hd + c], [hw - c, -hh, -hd + c], [hw - c, -hh, hd - c]], [0, -1, 0], kind, w, d, [[c, d - c], [c, c], [w - c, c], [w - c, d - c]]);
+    // Chanfreins verticaux (4 coins)
+    const cw = c * Math.SQRT2;
+    const vh = yHi - yLo;
+    for (const [sx, sz] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) {
+      poly([[sx * (hw - c), yHi, sz * hd], [sx * (hw - c), yLo, sz * hd], [sx * hw, yLo, sz * (hd - c)], [sx * hw, yHi, sz * (hd - c)]], [sx, 0, sz], kb, cw, vh, [[0, 0], [0, vh], [cw, vh], [cw, 0]]);
+    }
+    // Chanfreins horizontaux et coins, en haut puis en bas
+    for (const [on, sy] of [[top, 1], [bot, -1]]) {
+      if (!on) continue;
+      const yo = sy * hh, yi = sy * (hh - c);
+      const lw = w - 2 * c, ld = d - 2 * c;
+      for (const sz of [1, -1]) poly([[-hw + c, yi, sz * hd], [hw - c, yi, sz * hd], [hw - c, yo, sz * (hd - c)], [-hw + c, yo, sz * (hd - c)]], [0, sy, sz], kb, lw, cw, [[0, cw], [lw, cw], [lw, 0], [0, 0]]);
+      for (const sx of [1, -1]) poly([[sx * hw, yi, -hd + c], [sx * hw, yi, hd - c], [sx * (hw - c), yo, hd - c], [sx * (hw - c), yo, -hd + c]], [sx, sy, 0], kb, ld, cw, [[0, cw], [ld, cw], [ld, 0], [0, 0]]);
+      for (const [sx, sz] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) {
+        poly([[sx * (hw - c), yi, sz * hd], [sx * hw, yi, sz * (hd - c)], [sx * (hw - c), yo, sz * (hd - c)]], [sx, sy, sz], kb, cw, cw, [[0, cw], [cw, cw], [cw * 0.5, 0]]);
+      }
+    }
   }
 
   // Chaperon à deux pentes : boîte (axes alignés) coiffée d'un faîte le long de son grand
