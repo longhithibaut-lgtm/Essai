@@ -6,7 +6,10 @@
 //   qu'on cueille des lueurs.
 // - Ambiance : vent qui souffle par rafales, souffle de vitesse, oiseaux lointains.
 // - Effets : pas doux et alternés, saut, réception, glissade, accents musicaux sur
-//   les murs, carillons des lueurs, cloche d'arrivée, sons d'interface.
+//   les murs, carillons des lueurs (des phrases qui montent sans jamais crier),
+//   cloche d'arrivée, sons d'interface, souffle et arpège au moment de partir.
+// - Scènes : sur le titre et la fin, le célesta se raréfie et l'air du large
+//   souffle un peu plus ; en jeu, la musique suit l'élan.
 //
 // Tout passe par un compresseur doux : rien ne sature, rien ne surprend.
 
@@ -26,8 +29,11 @@ for (const c of CHORDS) c.pcs = new Set(c.pad.map((m) => m % 12));
 
 // Ré majeur pentatonique (ré mi fa# la si), du la4 au fa#6.
 const SCALE = [69, 71, 74, 76, 78, 81, 83, 86, 88, 90];
-// Carillons des lueurs : la même gamme, de plus en plus haut à chaque lueur.
-const CHIMES = [69, 71, 74, 76, 78, 81, 83, 86, 88, 90, 93, 95];
+// Carillons des lueurs : la même gamme, du ré5 au fa#6. Une série de lueurs
+// cueillies coup sur coup monte d'un degré à chaque fois, puis la phrase repart
+// d'une note de l'accord : jamais de suraigu, même avec beaucoup de lueurs.
+const CHIMES = [74, 76, 78, 81, 83, 86, 88, 90];
+const CHIME_PHRASE = 4.5; // secondes : au-delà, une nouvelle phrase commence
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[(Math.random() * arr.length) | 0];
@@ -45,7 +51,10 @@ export class Audio {
     this.speedK = 0;
     this.mode = 'ground';
     this.outro = false;
+    this.scene = 'title';
     this._foot = 1;
+    this._chimeIdx = -1;
+    this._lastChime = -99;
   }
 
   start(ctxOverride) {
@@ -440,6 +449,8 @@ export class Audio {
       return;
     }
     let p = 0.08 + this.energy * 0.4 + this.progress * 0.06;
+    // Sur le titre, le célesta se fait rare : on écoute surtout le vent et la nappe.
+    if (this.scene === 'title') p *= 0.75;
     if (beat % 2 === 1) p *= 0.55;
     if (beat === 0) p += 0.08;
     if (this.paused) p *= 0.35;
@@ -542,7 +553,8 @@ export class Audio {
 
     if (now >= this.nextGust) {
       this.nextGust = now + rand(1.8, 4.5);
-      this.windGain.gain.setTargetAtTime(rand(0.05, 0.12), now, rand(0.8, 1.6));
+      const airy = this.scene === 'play' ? 1 : 1.35; // l'air du large, sur le titre et la fin
+      this.windGain.gain.setTargetAtTime(rand(0.05, 0.12) * airy, now, rand(0.8, 1.6));
       this.windFilter.frequency.setTargetAtTime(rand(300, 650), now, 1.5);
       this.windPan.pan.setTargetAtTime(rand(-0.6, 0.6), now, 2.5);
     }
@@ -648,13 +660,21 @@ export class Audio {
   chime(index = 1) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    const i = Math.max(0, index - 1);
-    const m = CHIMES[i % CHIMES.length] + (i >= CHIMES.length ? 12 : 0);
-    this.progress = Math.max(this.progress, Math.min(1, index / 12));
+    if (t - this._lastChime < CHIME_PHRASE && this._chimeIdx >= 0 && this._chimeIdx < CHIMES.length - 1) {
+      this._chimeIdx++;
+    } else {
+      // Nouvelle phrase : une note de l'accord du moment, dans le bas de la gamme.
+      this._chimeIdx = 0;
+      for (let j = 0; j < 4; j++) {
+        if (this.chord.pcs.has(CHIMES[j] % 12)) { this._chimeIdx = j; break; }
+      }
+    }
+    this._lastChime = t;
+    const m = CHIMES[this._chimeIdx];
     // Un carillon de verre, puis sa quinte, plus douce
     this._pluck(t, m, 0.075, -0.15, this.sfx, 3.5);
     this._pluck(t + 0.004, m + 12, 0.02, 0.2, this.sfx, 2, false);
-    const next = SCALE.indexOf(m) >= 0 ? SCALE[Math.min(SCALE.length - 1, SCALE.indexOf(m) + 2)] : m + 7;
+    const next = SCALE[Math.min(SCALE.length - 1, Math.max(0, SCALE.indexOf(m)) + 2)];
     this._pluck(t + 0.16, next, 0.04, 0.25, this.sfx, 3.5);
     this._noise(t, 0.4, { type: 'highpass', freq: 6000, q: 0.4, gain: 0.006, attack: 0.01, tau: 0.12, dest: this.far });
   }
@@ -725,6 +745,16 @@ export class Audio {
     this._pluck(t + 0.07, 86, 0.026, 0.15, this.sfx, 2);
   }
 
+  // « Commencer » : un souffle qui monte avec le voile de lumière, et un arpège
+  // de l'accord de ré qui s'ouvre, comme une porte sur le matin.
+  uiStart() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this._noise(t, 1.6, { freq: 380, sweep: 2600, q: 0.6, gain: 0.03, attack: 0.55, tau: 0.45, dest: this.far });
+    [62, 69, 74, 78, 81, 86].forEach((m, i) => this._pluck(t + 0.05 + i * 0.11, m, 0.034 - i * 0.003, -0.5 + i * 0.2, this.music, 2));
+    this._thump(t + 0.02, 74, 0.035, 0.5);
+  }
+
   uiBack() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -739,6 +769,11 @@ export class Audio {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     this.muffle.frequency.setTargetAtTime(p ? 900 : 20000, t, p ? 0.18 : 0.3);
+  }
+
+  // Où en est le joueur : 'title', 'play' ou 'end'. Le mélange s'y adapte doucement.
+  setScene(name) {
+    this.scene = name;
   }
 
   setProgress(p) {
