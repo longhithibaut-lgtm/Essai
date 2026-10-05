@@ -61,6 +61,14 @@ button {
   display: block;
 }
 
+/* Les plans fixes du titre et de la fin reçoivent un léger étalonnage de photographie :
+   un rien plus de contraste et de couleur que le jeu, comme un tirage. Le changement se
+   fait sous le voile de lumière, on ne le voit jamais basculer. */
+body[data-screen='title'] #game,
+body[data-screen='end'].end-dawn #game {
+  filter: contrast(1.08) saturate(1.1);
+}
+
 /* ---------- Voile de lumière ---------- */
 .veil {
   position: fixed;

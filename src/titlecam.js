@@ -20,6 +20,7 @@ export const TITLE_SHOT = { pos: [-6, 18, -60], yaw: -0.2, pitch: -0.12, fov: 54
 export const END_SHOT = { pos: [-7, 18, -176], yaw: -0.404, pitch: -0.16, fov: 58, shift: 0.1, birds: 16, caption: 'Le pavillon de la cloche' };
 
 const TEST = new URLSearchParams(location.search).has('test');
+const STILL = matchMedia('(prefers-reduced-motion: reduce)');
 
 // Mouvement d'arrivée sur chaque plan, en temps réel (pas en temps de jeu : une machine
 // lente le voit aussi se poser à temps). Titre : on glisse vers le jardin en descendant
@@ -44,14 +45,16 @@ export function titleCamera(game, dt) {
   }
   game._shotSeen = now;
   let arrive = 0;
-  if (!TEST && !document.body.classList.contains('instant')) {
+  const still = STILL.matches;
+  if (!TEST && !still && !document.body.classList.contains('instant')) {
     const u = Math.min(1, (now - game._shotT0) / (ARRIVAL[key].secs * 1000));
     arrive = (1 - u) * (1 - u) * (1 - u);
   }
   // Dérive très lente : on avance et recule de quelques mètres en trois minutes, on
   // flotte un peu, comme porté par l'air tiède. Assez pour sentir la profondeur
   // (les toits proches glissent devant les tours lointaines), jamais assez pour la voir.
-  const a = game.time * 0.032;
+  // (Mouvement réduit demandé : la caméra ne bouge presque plus.)
+  const a = game.time * (still ? 0.004 : 0.032);
   const along = Math.sin(a) * 3.2 - arrive * ARRIVAL[key].back;
   const side = Math.sin(a * 0.71 + 1.3) * 1.4;
   const lift = Math.sin(a * 1.27 + 0.4) * 0.5 + arrive * ARRIVAL[key].rise;
