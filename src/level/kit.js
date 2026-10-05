@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { K } from './surfaces.js';
+import { K, NO_BEVEL } from './surfaces.js';
 
 // Lot de géométrie fusionnée. Chaque face porte des UV en mètres (u depuis le bord
 // gauche, v depuis le haut pour les côtés), ses dimensions (aFace.xy) et un style
@@ -87,6 +87,43 @@ export class Batch {
     if (!o.skipBottom) face([[-hw, -hh, hd], [-hw, -hh, -hd], [hw, -hh, -hd], [hw, -hh, hd]], [0, -1, 0], w, d, [[0, d], [0, 0], [w, 0], [w, d]]);
   }
 
+  // Chaperon à deux pentes : boîte (axes alignés) coiffée d'un faîte le long de son grand
+  // côté. Les pentes, les longs pans et les pignons ont des UV en mètres, comme une boîte.
+  ridge(minX, minY, minZ, maxX, maxY, maxZ, rh, o = {}) {
+    const kind = o.kind ?? K.STONE;
+    const rgb = toLinear(o.color ?? 0xf3ece6);
+    const st = o.style ?? 0;
+    const alongX = maxX - minX >= maxZ - minZ;
+    // repère local : a le long du faîte, b en travers
+    const a0 = alongX ? minX : minZ, a1 = alongX ? maxX : maxZ;
+    const b0 = alongX ? minZ : minX, b1 = alongX ? maxZ : maxX;
+    const L = a1 - a0, Wd = b1 - b0, h = maxY - minY, bm = (b0 + b1) / 2, yr = maxY + rh;
+    const P = (a, y, b) => (alongX ? [a, y, b] : [b, y, a]);
+    const N = (na, ny, nb) => (alongX ? [na, ny, nb] : [nb, ny, na]);
+    const quad = (pts, n, fw, fh, uvs) => {
+      const nn = N(...n);
+      const ids = pts.map((p, i) => { const q = P(...p); return this.vertex(q[0], q[1], q[2], nn[0], nn[1], nn[2], uvs[i][0], uvs[i][1], rgb, kind, fw, fh, st); });
+      // ordre : on garde des faces tournées vers l'extérieur quel que soit l'axe
+      if (alongX) this.quadIdx(ids[0], ids[1], ids[2], ids[3]); else this.quadIdx(ids[0], ids[3], ids[2], ids[1]);
+    };
+    const sl = Math.hypot(Wd / 2, rh);
+    const sn = [0, (Wd / 2) / sl, rh / sl];
+    // longs pans verticaux (b = b1 puis b = b0)
+    quad([[a0, maxY, b1], [a0, minY, b1], [a1, minY, b1], [a1, maxY, b1]], [0, 0, 1], L, h, [[0, 0], [0, h], [L, h], [L, 0]]);
+    quad([[a1, maxY, b0], [a1, minY, b0], [a0, minY, b0], [a0, maxY, b0]], [0, 0, -1], L, h, [[0, 0], [0, h], [L, h], [L, 0]]);
+    // pentes
+    quad([[a0, yr, bm], [a0, maxY, b1], [a1, maxY, b1], [a1, yr, bm]], [0, sn[1], sn[2]], L, sl, [[0, 0], [0, sl], [L, sl], [L, 0]]);
+    quad([[a1, yr, bm], [a1, maxY, b0], [a0, maxY, b0], [a0, yr, bm]], [0, sn[1], -sn[2]], L, sl, [[0, 0], [0, sl], [L, sl], [L, 0]]);
+    // pignons : rectangle et triangle
+    for (const [a, na] of [[a1, 1], [a0, -1]]) {
+      const bl = na > 0 ? b1 : b0, br = na > 0 ? b0 : b1;
+      quad([[a, maxY, bl], [a, minY, bl], [a, minY, br], [a, maxY, br]], [na, 0, 0], Wd, h, [[0, 0], [0, h], [Wd, h], [Wd, 0]]);
+      const nn = N(na, 0, 0);
+      const t = [[a, maxY, bl, 0, rh], [a, yr, bm, Wd / 2, 0], [a, maxY, br, Wd, rh]].map(([x, y, z, u, v]) => { const q = P(x, y, z); return this.vertex(q[0], q[1], q[2], nn[0], nn[1], nn[2], u, v, rgb, kind + NO_BEVEL, Wd, rh, st); });
+      if (alongX) this.tri(t[0], t[2], t[1]); else this.tri(t[0], t[1], t[2]);
+    }
+  }
+
   // Boîte par coins (axes alignés)
   boxMinMax(minX, minY, minZ, maxX, maxY, maxZ, o = {}) {
     this.box((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2, maxX - minX, maxY - minY, maxZ - minZ, o);
@@ -94,7 +131,7 @@ export class Batch {
 
   // Cylindre vertical (ou cône tronqué), base en y.
   cylinder(x, y, z, rTop, rBot, h, seg = 12, o = {}) {
-    const kind = o.kind ?? K.METAL;
+    const kind = (o.kind ?? K.METAL) + NO_BEVEL;
     const rgb = toLinear(o.color ?? 0xdddddd);
     const st = o.style ?? 0;
     const circ = Math.PI * 2 * Math.max(rTop, rBot);
@@ -127,7 +164,7 @@ export class Batch {
 
   // Cylindre entre deux points (tuyaux, cordes, montants inclinés)
   tube(a, b, r, seg = 6, o = {}) {
-    const kind = o.kind ?? K.METAL;
+    const kind = (o.kind ?? K.METAL) + NO_BEVEL;
     const rgb = toLinear(o.color ?? 0xdddddd);
     const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
     const dir = B.clone().sub(A);
@@ -157,7 +194,7 @@ export class Batch {
   // Géométrie quelconque (déjà positionnée par `matrix`). Normales lissées optionnelles
   // vers `center` (volumes de feuillage).
   geometry(geo, matrix, o = {}) {
-    const kind = o.kind ?? K.PLAIN;
+    const kind = (o.kind ?? K.PLAIN) + NO_BEVEL;
     const g = geo;
     const pos = g.attributes.position;
     const nor = g.attributes.normal;
@@ -204,7 +241,7 @@ export class Batch {
   cloth(fn, ns, nt, o = {}) {
     const rgbFn = typeof o.color === 'function' ? o.color : null;
     const rgb = rgbFn ? null : toLinear(o.color ?? 0xffffff);
-    const kind = o.kind ?? K.PLAIN;
+    const kind = (o.kind ?? K.PLAIN) + NO_BEVEL;
     const base = this.count;
     const P = [];
     for (let j = 0; j <= nt; j++) {

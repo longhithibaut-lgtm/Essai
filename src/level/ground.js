@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { K } from './surfaces.js';
 import { PAL } from './props.js';
 
@@ -83,4 +84,40 @@ export function basin(ctx, minX, maxX, minZ, maxZ, y, h, o = {}) {
   if (ctx.ao) ctx.ao((minX + maxX) / 2, (minZ + maxZ) / 2, maxX - minX + 0.6, maxZ - minZ + 0.6, y, 0.8);
   if (ctx.physics && o.collide !== false) ctx.solid([minX, y, minZ], [maxX, y + h, maxZ], 'rim');
   return y + h - 0.065;
+}
+
+// Dalles qui ont bougé : quelques dalles soulevées de 1 à 2 cm (leurs arêtes usées
+// accrochent la lumière) ou remplacées par du gravier, exactement sur la grille de
+// calepinage que dessine le shader (même taille, mêmes rangs décalés).
+// base : hauteur du dessus du sol sous les dalles (dallage ou allée incrustée).
+export function shiftedSlabs(ctx, minX, maxX, minZ, maxZ, base, o = {}) {
+  const tile = o.tile ?? 1.0;
+  const ts = 0.4 + (1.3 - 0.4) * tile;
+  const rand = o.rand ?? ctx.rand;
+  const n = o.n ?? 4;
+  const color = o.color ?? 0xf3ece3;
+  const used = new Set();
+  let placed = 0;
+  for (let t = 0; t < n * 12 && placed < n; t++) {
+    const z = minZ + rand() * (maxZ - minZ);
+    const r = Math.floor(z / ts);
+    const off = tile >= 0.75 && ((r % 2) + 2) % 2 === 1 ? ts * 0.5 : 0;
+    const x = minX + rand() * (maxX - minX);
+    const i = Math.floor((x + off) / ts);
+    const x0 = i * ts - off, z0 = r * ts;
+    if (x0 < minX + 0.01 || x0 + ts > maxX - 0.01 || z0 < minZ + 0.01 || z0 + ts > maxZ - 0.01) continue;
+    const key = i + ':' + r;
+    if (used.has(key)) continue;
+    used.add(key);
+    placed++;
+    const j = 0.013;
+    if (rand() < (o.gravel ?? 0.3)) {
+      ctx.arch.boxMinMax(x0 + j, base - 0.01, z0 + j, x0 + ts - j, base + 0.004, z0 + ts - j, { kind: K.GRAVEL, color: 0xcfc3b4, skipBottom: true });
+    } else {
+      const h = 0.009 + rand() * 0.014;
+      const k = 0.94 + rand() * 0.1;
+      const c = new THREE.Color(color).multiplyScalar(k);
+      ctx.arch.boxMinMax(x0 + j, base - 0.01, z0 + j, x0 + ts - j, base + h, z0 + ts - j, { kind: K.PAVE, color: c.getHex(), style: tile, skipBottom: true });
+    }
+  }
 }

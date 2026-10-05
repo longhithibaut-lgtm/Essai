@@ -108,8 +108,10 @@ export function roofDress(ctx, b, o = {}) {
   // Quelques toits de tuiles et coupoles : silhouette méditerranéenne, apaisée.
   const kind = o.kind ?? (o.garden ? 'flat' : (() => {
     const r = rand();
-    if (o.allowGable !== false && r < 0.2 && W < 15 && D < 15) return 'gable';
-    if (o.allowDome !== false && r < 0.26 && W > 8 && D > 8) return 'dome';
+    // Au loin, davantage de toits de tuiles : la silhouette se découpe et la ville se réchauffe
+    const gp = far ? 0.32 : 0.2;
+    if (o.allowGable !== false && r < gp && W < 15 && D < 15) return 'gable';
+    if (o.allowDome !== false && r < gp + 0.06 && W > 8 && D > 8) return 'dome';
     return 'flat';
   })());
   if (kind === 'gable') {
@@ -134,10 +136,12 @@ export function roofDress(ctx, b, o = {}) {
   if (o.parapet !== false) {
     const h = 0.5 + rand() * 0.5;
     const pctx = { ...ctx, physics: null };
-    parapet(pctx, b.minX, b.maxZ - 0.15, b.maxX, b.maxZ - 0.15, y, { h, batch, collide: false, piers: !far });
-    parapet(pctx, b.minX, b.minZ + 0.15, b.maxX, b.minZ + 0.15, y, { h, batch, collide: false, piers: !far });
-    parapet(pctx, b.minX + 0.15, b.minZ + 0.3, b.minX + 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far });
-    parapet(pctx, b.maxX - 0.15, b.minZ + 0.3, b.maxX - 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far });
+    // Sur l'étanchéité, chaque muret a son relevé et son solin (côté toit)
+    const sk = !far && b.deck === 'roof';
+    parapet(pctx, b.minX, b.maxZ - 0.15, b.maxX, b.maxZ - 0.15, y, { h, batch, collide: false, piers: !far, skirt: sk ? -1 : 0 });
+    parapet(pctx, b.minX, b.minZ + 0.15, b.maxX, b.minZ + 0.15, y, { h, batch, collide: false, piers: !far, skirt: sk ? 1 : 0 });
+    parapet(pctx, b.minX + 0.15, b.minZ + 0.3, b.minX + 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far, skirt: sk ? 1 : 0 });
+    parapet(pctx, b.maxX - 0.15, b.minZ + 0.3, b.maxX - 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far, skirt: sk ? -1 : 0 });
   }
   const used = [];
   const free = (x, z, r) => used.every((u) => Math.hypot(u[0] - x, u[1] - z) > u[2] + r);

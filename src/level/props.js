@@ -27,6 +27,8 @@ export const PAL = {
   terra: 0xd48a6c,
   glow: 0xffd2a0,
   rope: 0x8a7c70,
+  membrane: 0xa49c94,
+  zinc: 0xb9bec4,
   fabrics: [0xfff4e6, 0xf6d6c2, 0xefc0b2, 0xd7e2cf, 0xf3e0b0, 0xd9d7ea, 0xffb196, 0xf9ebe0],
 };
 
@@ -164,11 +166,22 @@ export function building(ctx, o) {
   b.box(cx, bottom + shaftH / 2, cz, w, shaftH, d, { kind: o.sideKind ?? (o.plain ? K.PLASTER : K.FACADE), color, style: st, skipBottom: true, skipTop: deck === 'pave' });
   if (hasCornice) {
     const ov = o.corniceOver ?? (detail === 'full' && !o.plain ? 0.42 : 0.2);
+    // Sous un toit-terrasse, la corniche descend de quelques centimètres : son dessus
+    // ne recouvre plus l'étanchéité (et la tête du mur forme une petite rive).
+    const cTop = shaftTop - (deck === 'roof' ? 0.07 : 0);
     if (o.plain || !detail) {
-      b.box(cx, shaftTop - 0.22, cz, w + ov * 2, 0.44, d + ov * 2, { kind: K.PLASTER, color: corniceCol });
-      b.box(cx, shaftTop - 0.56, cz, w + ov, 0.24, d + ov, { kind: K.PLASTER, color: corniceCol });
+      b.box(cx, cTop - 0.22, cz, w + ov * 2, 0.44, d + ov * 2, { kind: K.PLASTER, color: corniceCol });
+      b.box(cx, cTop - 0.56, cz, w + ov, 0.24, d + ov, { kind: K.PLASTER, color: corniceCol });
     } else {
-      cornice(b, bb, shaftTop, ov, corniceCol, detail === 'full', faces);
+      cornice(b, bb, cTop, ov, corniceCol, detail === 'full', faces);
+    }
+  }
+  // Relevés d'étanchéité en rive du toit, coiffés d'un solin de zinc
+  if (deck === 'roof' && o.upstand) {
+    for (const f of (o.upstand === true ? FACES : o.upstand)) {
+      const xf = f === '+x' || f === '-x';
+      const W = xf ? d : w;
+      upstand(b, bb, f, xf ? 0.15 : 0, xf ? W - 0.15 : W, top, o.upstandH ?? 0.22);
     }
   }
   // Pilastres, allèges, ailettes
@@ -194,6 +207,21 @@ export function building(ctx, o) {
   return { minX, maxX, minZ, maxZ, top, cx, cz, w, d, style: st, plain: !!o.plain, deck, color };
 }
 
+// Relevé d'étanchéité le long d'une face (u0..u1), posé en rive à l'intérieur du toit,
+// et son solin de zinc qui déborde vers l'extérieur.
+function ringBox(batch, bb, face, u0, u1, y0, y1, din, dout, o) {
+  switch (face) {
+    case '+z': batch.boxMinMax(bb.minX + u0, y0, bb.maxZ - din, bb.minX + u1, y1, bb.maxZ + dout, o); break;
+    case '-z': batch.boxMinMax(bb.maxX - u1, y0, bb.minZ - dout, bb.maxX - u0, y1, bb.minZ + din, o); break;
+    case '+x': batch.boxMinMax(bb.maxX - din, y0, bb.maxZ - u1, bb.maxX + dout, y1, bb.maxZ - u0, o); break;
+    default: batch.boxMinMax(bb.minX - dout, y0, bb.minZ + u0, bb.minX + din, y1, bb.minZ + u1, o);
+  }
+}
+export function upstand(batch, bb, face, u0, u1, y, h = 0.22) {
+  ringBox(batch, bb, face, u0, u1, y - 0.02, y + h, 0.11, 0, { kind: K.MEMBRANE, color: PAL.membrane });
+  ringBox(batch, bb, face, u0, u1, y + h, y + h + 0.035, 0.14, 0.05, { kind: K.METAL, color: PAL.zinc });
+}
+
 const _ca = new THREE.Color(), _cb = new THREE.Color();
 export function mixHex(a, b, t) {
   _ca.set(a); _cb.set(b);
@@ -210,7 +238,25 @@ export function parapet(ctx, x1, z1, x2, z2, top, o = {}) {
   const bx0 = alongX ? minX : minX - t / 2, bx1 = alongX ? maxX : minX + t / 2;
   const bz0 = alongX ? minZ - t / 2 : minZ, bz1 = alongX ? minZ + t / 2 : maxZ;
   b.boxMinMax(bx0, top, bz0, bx1, top + h - 0.07, bz1, { kind: K.PLASTER, color: o.color ?? PAL.plaster });
-  b.boxMinMax(bx0 - (alongX ? 0 : 0.05), top + h - 0.07, bz0 - (alongX ? 0.05 : 0), bx1 + (alongX ? 0 : 0.05), top + h, bz1 + (alongX ? 0.05 : 0), { kind: o.coral ? K.CORAL : K.STONE, color: o.coral ? PAL.coral : PAL.coping });
+  // Chaperon : à deux pentes en pierre (un versant au soleil, l'autre dans l'ombre)
+  const cx0 = bx0 - (alongX ? 0 : 0.05), cz0 = bz0 - (alongX ? 0.05 : 0), cx1 = bx1 + (alongX ? 0 : 0.05), cz1 = bz1 + (alongX ? 0.05 : 0);
+  if (o.coral) b.boxMinMax(cx0, top + h - 0.07, cz0, cx1, top + h, cz1, { kind: K.CORAL, color: PAL.coral });
+  else b.ridge(cx0, top + h - 0.07, cz0, cx1, top + h - 0.025, cz1, 0.05, { kind: K.STONE, color: PAL.coping });
+  // Relevé d'étanchéité au pied du muret, côté toit (o.skirt : -1 ou +1 sur l'axe
+  // perpendiculaire), avec son solin de zinc
+  if (o.skirt) {
+    const sh = o.skirtH ?? 0.2;
+    const o1 = { kind: K.MEMBRANE, color: PAL.membrane }, o2 = { kind: K.METAL, color: PAL.zinc };
+    if (alongX) {
+      const z0 = o.skirt < 0 ? bz0 - 0.03 : bz1, z1 = o.skirt < 0 ? bz0 : bz1 + 0.03;
+      b.boxMinMax(bx0, top - 0.01, z0, bx1, top + sh, z1, o1);
+      b.boxMinMax(bx0, top + sh, o.skirt < 0 ? bz0 - 0.055 : bz1, bx1, top + sh + 0.03, o.skirt < 0 ? bz0 : bz1 + 0.055, o2);
+    } else {
+      const x0 = o.skirt < 0 ? bx0 - 0.03 : bx1, x1 = o.skirt < 0 ? bx0 : bx1 + 0.03;
+      b.boxMinMax(x0, top - 0.01, bz0, x1, top + sh, bz1, o1);
+      b.boxMinMax(o.skirt < 0 ? bx0 - 0.055 : bx1, top + sh, bz0, o.skirt < 0 ? bx0 : bx1 + 0.055, top + sh + 0.03, bz1, o2);
+    }
+  }
   // Piliers réguliers le long des grands murets : rythme, ombres, petits chapiteaux
   const len = alongX ? maxX - minX : maxZ - minZ;
   if (o.piers !== false && len > 4.5 && !o.coral) {
@@ -221,10 +267,10 @@ export function parapet(ctx, x1, z1, x2, z2, top, o = {}) {
       const c0 = Math.max(alongX ? minX : minZ, c - 0.2), c1 = Math.min(alongX ? maxX : maxZ, c + 0.2);
       if (alongX) {
         b.boxMinMax(c0, top, bz0 - 0.045, c1, top + h - 0.07, bz1 + 0.045, { kind: K.PLASTER, color: pc });
-        b.boxMinMax(c0 - 0.04, top + h - 0.07, bz0 - 0.08, c1 + 0.04, top + h + 0.05, bz1 + 0.08, { kind: K.STONE, color: PAL.coping });
+        b.ridge(c0 - 0.04, top + h - 0.07, bz0 - 0.08, c1 + 0.04, top + h + 0.02, bz1 + 0.08, 0.07, { kind: K.STONE, color: PAL.coping });
       } else {
         b.boxMinMax(bx0 - 0.045, top, c0, bx1 + 0.045, top + h - 0.07, c1, { kind: K.PLASTER, color: pc });
-        b.boxMinMax(bx0 - 0.08, top + h - 0.07, c0 - 0.04, bx1 + 0.08, top + h + 0.05, c1 + 0.04, { kind: K.STONE, color: PAL.coping });
+        b.ridge(bx0 - 0.08, top + h - 0.07, c0 - 0.04, bx1 + 0.08, top + h + 0.02, c1 + 0.04, 0.07, { kind: K.STONE, color: PAL.coping });
       }
     }
   }
@@ -234,8 +280,8 @@ export function parapet(ctx, x1, z1, x2, z2, top, o = {}) {
     for (const sg of [-1, 1]) {
       const px = alongX ? mx : mx + sg * (t / 2 + 0.25), pz = alongX ? mz + sg * (t / 2 + 0.25) : mz;
       if (!ctx.groundAt(px, pz, top)) continue;
-      if (alongX) ao(ctx, mx, mz + sg * t / 2, bx1 - bx0, 0.6, top, 1);
-      else ao(ctx, mx + sg * t / 2, mz, 0.6, bz1 - bz0, top, 1);
+      if (alongX) ao(ctx, mx, mz + sg * t / 2, bx1 - bx0, 0.5, top, 0.75);
+      else ao(ctx, mx + sg * t / 2, mz, 0.5, bz1 - bz0, top, 0.75);
     }
   }
   if (o.collide !== false && ctx.physics) ctx.solid([bx0, top, bz0], [bx1, top + h, bz1], 'parapet');

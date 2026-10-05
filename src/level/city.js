@@ -9,7 +9,9 @@ import { K } from './surfaces.js';
 // Blancs et crèmes en majorité, quelques tons plus soutenus (ocre, terre cuite rosée,
 // sauge, pierre grise) pour que la ville se lise en couches.
 const COLORS = [PAL.plaster, PAL.plaster, PAL.plasterWarm, PAL.plasterWarm, PAL.plasterCool, PAL.plasterSand, PAL.plasterRose, PAL.plasterSage, 0xf7f4f0,
-  0xeac9a2, 0xe7b9a3, 0xd3dbc8, 0xdcd5cb, 0xcfd6de, 0xf0d5b4];
+  0xeac9a2, 0xe7b9a3, 0xd3dbc8, 0xdcd5cb, 0xcfd6de, 0xf0d5b4,
+  // tons soutenus mais doux : ocre, terre cuite rosée, sauge, gris-bleu, pierre
+  0xdcae7e, 0xd49a84, 0xb9c3a6, 0xadb7c4, 0xc9b9a6, 0xe0b48f];
 
 function overlaps(a, list, m) {
   return list.some((b) => a.minX < b.maxX + m && a.maxX > b.minX - m && a.minZ < b.maxZ + m && a.maxZ > b.minZ - m);

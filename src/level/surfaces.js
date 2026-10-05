@@ -26,7 +26,13 @@ export const K = {
   GRILLE: 13, // caillebotis / grille sombre
   ROOF: 14, // tuiles canal
   GRAVEL: 15, // gravier, galets
+  MEMBRANE: 16, // relevé d'étanchéité (bitume à paillettes minérales)
 };
+
+// Les boîtes reçoivent des arêtes abattues et usées dans le shader. Les cylindres,
+// tubes, géométries libres et tissus portent ce décalage sur leur type pour en être
+// exemptés (le type entier reste lu avec floor(k + 0.5)).
+export const NO_BEVEL = 0.25;
 
 const COMMON_GLSL = /* glsl */ `
   float aHash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -282,8 +288,8 @@ const ARCH_FRAG_HEAD = /* glsl */ `
     vec3 R = reflect(V, n);
     R.y = abs(R.y) * 0.8 + 0.1 + 0.05 * (id - 0.5);
     R = normalize(R);
-    float fres = 0.08 + 0.92 * pow(1.0 - max(dot(-V, n), 0.0), 4.0);
-    vec3 glass = vec3(0.06, 0.075, 0.1) * (0.8 + 0.4 * id);
+    float fres = 0.04 + 0.96 * pow(1.0 - max(dot(-V, n), 0.0), 5.0);
+    vec3 glass = vec3(0.05, 0.06, 0.09) * (0.8 + 0.4 * id);
     vec3 refl = aSky(R);
     float az = atan(R.x, R.z);
     vec4 sn = textureLod(uNoise, vec2(az * 0.6, 0.31), 0.0);
@@ -291,7 +297,7 @@ const ARCH_FRAG_HEAD = /* glsl */ `
     refl = mix(refl * vec3(0.5, 0.5, 0.56), refl, sky);
     // quelques vitres prennent davantage le ciel
     float bright = step(0.78, fract(id * 5.3));
-    vec3 glassEmit = refl * (0.06 + 0.62 * fres + 0.1 * bright) * (0.8 + 0.4 * id);
+    vec3 glassEmit = refl * (0.02 + 0.92 * fres + 0.08 * bright) * (0.8 + 0.4 * id);
     float spandrel = style == 3.0 ? step(floorH - 0.95, g.y) : 0.0;
     glass = mix(glass, vec3(0.3, 0.32, 0.37), spandrel);
     glassEmit *= 1.0 - 0.5 * spandrel;
@@ -318,8 +324,42 @@ const ARCH_FRAG_HEAD = /* glsl */ `
     rough = mix(rough, mix(mix(0.12, 0.6, frame), 0.85, reveal), win);
   }
 
+  // Arêtes abattues et usées : le chanfrein est simulé par la normale (il accroche le
+  // soleil ou se creuse d'ombre), le fil de l'arête s'use et s'épaufre par endroits,
+  // et la matière à nu apparaît (l'enduit clair sous la peinture corail, la pierre
+  // plus sombre sous le calcin). Lisible de 2 à 15 m, s'efface au loin.
+  void aEdges(inout vec3 col, inout float rough, float kind, vec2 uv, float W, float H, vec2 fw, vec3 Tu, vec3 Tv, float seed) {
+    float dU = min(uv.x, W - uv.x), dV = min(uv.y, H - uv.y);
+    bool onU = dU < dV;
+    // largeur mesurée en travers de l'arête la plus proche (nette même vue en enfilade)
+    float across = onU ? fw.x : fw.y;
+    float fade = 1.0 - smoothstep(0.1, 0.35, across);
+    float lim = 0.3 * min(W, H);
+    vec2 cw = min(max(vec2(0.024), fw * 1.6), vec2(min(lim, 0.08)));
+    // loin de toute arête (l'essentiel d'une grande face) : rien à faire
+    if (fade <= 0.0 || min(dU / cw.x, dV / cw.y) > 6.3) return;
+    float along = onU ? uv.y + step(W * 0.5, uv.x) * 31.0 : uv.x + 57.0 + step(H * 0.5, uv.y) * 23.0;
+    vec4 cn = textureLod(uNoise, vec2(along * 0.085 + seed * 7.0, seed * 3.1 + 0.37), 0.0);
+    float cw2 = textureLod(uNoise, vec2(along * 0.6 + seed * 3.0, seed * 5.3 + 0.11), 0.0).b;
+    float chip = smoothstep(0.66, 0.76, cn.b * 0.75 + cn.r * 0.25) * (1.0 - smoothstep(0.02, 0.06, across));
+    chip *= (kind == 4.0 || kind == 6.0 || kind == 7.0) ? 0.0 : 1.0;
+    float grow = 1.0 + chip * (2.2 + 3.0 * cw2);
+    vec2 bite = min(cw * grow, vec2(lim));
+    vec4 d = vec4(uv.x, W - uv.x, uv.y, H - uv.y);
+    vec4 f = 1.0 - smoothstep(vec4(0.0), bite.xxyy, d);
+    vec3 tilt = Tu * (f.y - f.x) + Tv * (f.w - f.z);
+    pN = normalize(pN + tilt * fade);
+    float e = max(max(f.x, f.y), max(f.z, f.w));
+    col *= 1.0 + 0.04 * e * fade;
+    float inChip = smoothstep(0.32, 0.6, e) * chip;
+    vec3 bare = kind == 5.0 ? vec3(0.62, 0.55, 0.48) : col * vec3(0.8, 0.78, 0.76);
+    col = mix(col, bare * (0.9 + 0.14 * cw2), inChip);
+    rough = mix(rough, 0.95, inChip);
+  }
+
   void aPattern(inout vec3 col, inout float rough, inout float metal, inout vec3 emit) {
     float kind = floor(vKind + 0.5);
+    float bevelOK = step(fract(vKind + 0.01), 0.1);
     vec3 n = normalize(vWNrm);
     vec3 V = normalize(vWPos - cameraPosition);
     float isTop = step(0.6, n.y);
@@ -329,13 +369,36 @@ const ARCH_FRAG_HEAD = /* glsl */ `
     vec2 fw = max(fwidth(uv), vec2(1e-4));
     vec2 fwp = max(fwidth(vWPos.xz), vec2(1e-4));
     float W = vFace.x, H = vFace.y;
+    // Repère de la face (sens des u et des v croissants), pour les chanfreins
+    vec3 Tu, Tv;
+    {
+      vec3 dpx = dFdx(vWPos), dpy = dFdy(vWPos);
+      vec2 dux = dFdx(uv), duy = dFdy(uv);
+      vec3 r1 = cross(dpy, n), r2 = cross(n, dpx);
+      vec3 gu = r1 * dux.x + r2 * duy.x;
+      vec3 gv = r1 * dux.y + r2 * duy.y;
+      Tu = gu / max(length(gu), 1e-9);
+      Tv = gv / max(length(gv), 1e-9);
+    }
+    if (isSide > 0.5) { Tu = normalize(cross(vec3(0.0, 1.0, 0.0), n)); Tv = vec3(0.0, -1.0, 0.0); }
+    // Graine propre à chaque face (son plan, quantifié pour être rigoureusement constant
+    // sur la face malgré l'interpolation, et ses dimensions)
+    float seed = fract(floor(dot(vWPos, n) * 4.0 + 0.37) * 0.1545 + (W + H) * 0.1373);
+    // Blancs adoucis : au-delà de 0,62 l'albédo est comprimé, pour que joints,
+    // fenêtres et patine gardent leur dessin en plein soleil.
+    if (kind != 10.0) {
+      float mxc = max(col.r, max(col.g, col.b));
+      float knee = kind == 5.0 ? 0.8 : 0.62;
+      if (mxc > knee) col *= (knee + (mxc - knee) * 0.55) / mxc;
+    }
     // Arêtes légèrement éclaircies : faux chanfrein qui accroche la lumière
     float ed = min(min(uv.x, W - uv.x), min(uv.y, H - uv.y));
     float edge = 1.0 - smoothstep(0.0, 0.035 + fw.x, ed);
     // Grain général très doux
     vec2 wp = isTop > 0.5 ? vWPos.xz : vec2(vWPos.x + vWPos.z, vWPos.y);
     vec4 nz = texture2D(uNoise, wp * 0.045);
-    float big = nz.r * 0.5 + texture2D(uNoise, wp.yx * 0.0163 + 0.37).r * 0.3 + nz.g * 0.2;
+    float bigLow = texture2D(uNoise, wp.yx * 0.0163 + 0.37).r;
+    float big = nz.r * 0.5 + bigLow * 0.3 + nz.g * 0.2;
     float fine = nz.b;
     // Les grandes façades s'assombrissent doucement vers le bas (profondeur, brume).
     col *= mix(1.0, mix(0.74, 1.0, exp(-clamp(uv.y, 0.0, 400.0) * 0.025)), isSide);
@@ -349,15 +412,16 @@ const ARCH_FRAG_HEAD = /* glsl */ `
         pp.x += step(0.75, vFace.z) * step(0.5, fract(pp.y / ts * 0.5)) * ts * 0.5;
         vec2 tid = floor(pp / ts);
         float h = aHash(tid);
-        float g = max(aLine(aGridDist(pp.x, ts), 0.011, fwp.x), aLine(aGridDist(pp.y, ts), 0.011, fwp.y));
+        float g = max(aLine(aGridDist(pp.x, ts), 0.012, fwp.x), aLine(aGridDist(pp.y, ts), 0.012, fwp.y));
         float h2 = aHash(tid + 17.3);
-        col *= (0.93 + 0.12 * h) * (0.93 + 0.1 * big) * (0.975 + 0.05 * fine);
+        float tv = mix(0.24, 0.22, step(0.75, vFace.z));
+        col *= (1.0 - tv * 0.5 + tv * h) * (0.9 + 0.16 * big) * (0.97 + 0.06 * fine);
         // quelques dalles remplacées, plus sombres ou plus chaudes
         col *= h2 > 0.94 ? 0.86 : (h2 < 0.05 ? 1.04 : 1.0);
         col = mix(col, col * vec3(1.03, 0.97, 0.92), step(0.9, h) * 0.6);
         // joints encrassés, mousse par endroits
         float moss = smoothstep(0.55, 0.75, big) * (1.0 - smoothstep(0.08, 0.2, max(fwp.x, fwp.y)));
-        col *= 1.0 - (0.2 + 0.12 * moss) * g;
+        col *= 1.0 - (0.27 + 0.12 * moss) * g;
         // arêtes des dalles légèrement abattues : accrochent le soleil rasant
         vec2 bv = aBevel(pp, vec2(ts), 0.035) * (1.0 - smoothstep(0.006, 0.03, max(fwp.x, fwp.y)));
         pN = normalize(vec3(bv.x * 0.3, 1.0, bv.y * 0.3));
@@ -369,10 +433,34 @@ const ARCH_FRAG_HEAD = /* glsl */ `
         float seg = smoothstep(0.35, 0.6, texture2D(uNoise, (tl + tid * 0.21) * 0.6 + 0.5).b);
         float crack = aLine(abs(cn - 0.5 + (tl.x - 0.5) * 0.15), 0.004, max(fwp.x, fwp.y) / ts * 2.0) * crackOn * seg;
         col *= 1.0 - 0.2 * crack;
-        // taches d'eau séchée, grandes et douces
-        float wet = smoothstep(0.58, 0.78, texture2D(uNoise, vWPos.xz * 0.013 + 0.71).r);
-        col *= 1.0 - 0.07 * wet;
-        rough = 0.78 + 0.12 * h - 0.1 * wet;
+        // taches d'eau séchée, grandes et douces, cernées d'une auréole
+        float wl = texture2D(uNoise, vWPos.xz * 0.013 + 0.71).r * 0.8 + texture2D(uNoise, vWPos.xz * 0.05 + 0.2).g * 0.2;
+        float wet = smoothstep(0.56, 0.74, wl);
+        float nearP = 1.0 - smoothstep(0.015, 0.06, max(fwp.x, fwp.y));
+        float tide = (1.0 - smoothstep(0.0, 0.006, abs(wl - 0.585))) * nearP;
+        col *= (1.0 - 0.13 * wet) * (1.0 - 0.24 * tide);
+        // lichens : petites rosettes pâles semées sur la pierre (plus près des rives)
+        {
+          vec2 lp = vWPos.xz * 3.1;
+          vec2 li = floor(lp);
+          float lhh = aHash(li + 31.7);
+          vec2 lo = (vec2(fract(lhh * 7.3), fract(lhh * 3.9)) - 0.5) * 0.45;
+          float lr = 0.13 + 0.2 * fract(lhh * 13.1);
+          float lich = (1.0 - smoothstep(lr - 0.07, lr, length(fract(lp) - 0.5 - lo))) * step(0.935, lhh) * nearP;
+          col = mix(col, col * vec3(0.86, 0.88, 0.7), lich * 0.75);
+        }
+        rough = 0.78 + 0.12 * h - 0.12 * wet;
+        // quelques dalles polies par les pas : elles prennent le soleil rasant
+        if (h2 > 0.3 && h2 < 0.42) rough = 0.5;
+        // grandes terrasses : crasse et mousse le long des rives, au pied des murets
+        if (min(W, H) > 5.0) {
+          float de = min(min(uv.x, W - uv.x), min(uv.y, H - uv.y));
+          float rn = texture2D(uNoise, vWPos.xz * 0.15 + 0.4).b;
+          float rim = 1.0 - smoothstep(0.04, 0.5, de + (rn - 0.5) * 0.3);
+          col *= 1.0 - 0.2 * rim;
+          col = mix(col, col * vec3(0.84, 0.9, 0.74), rim * smoothstep(0.45, 0.7, big) * 0.7);
+          rough = mix(rough, 0.95, rim);
+        }
       } else {
         float j = aLine(aGridDist(uv.y, 1.25), 0.01, fw.y) * isSide;
         col *= (0.95 + 0.07 * big) * (1.0 - 0.07 * j);
@@ -384,17 +472,78 @@ const ARCH_FRAG_HEAD = /* glsl */ `
         col *= 0.95 + 0.08 * big;
         aWindows(col, rough, emit, n, V, fw);
       } else if (isTop > 0.5) {
-        // Toit-terrasse : lés d'étanchéité, rustines, gravier par plaques
-        float s = max(aLine(aGridDist(vWPos.x, 1.8), 0.025, fwp.x), aLine(aGridDist(vWPos.z, 3.6), 0.025, fwp.y));
-        vec2 lid = floor(vWPos.xz / vec2(1.8, 3.6));
-        float lh = aHash(lid + vFace.z * 9.0);
-        float patchy = smoothstep(0.5, 0.7, texture2D(uNoise, vWPos.xz * 0.021 + 0.13).r);
-        col *= 0.88 * (0.9 + 0.1 * big) * (0.95 + 0.08 * fine) * (0.95 + 0.07 * lh) * (1.0 - 0.18 * s) * (1.0 - 0.08 * patchy);
-        rough = 0.95;
+        // Toit-terrasse : lés d'étanchéité soudés (bourrelets qui accrochent le soleil),
+        // rustines, gravier de lestage en rive et par plaques, auréoles de flaques.
+        vec2 p = vWPos.xz;
+        float sd = fract(vFace.z * 9.13);
+        float nearR = 1.0 - smoothstep(0.02, 0.07, max(fwp.x, fwp.y));
+        float rid = floor(p.x);
+        float zl = p.y + aHash(vec2(rid, sd)) * 7.0;
+        float eid = floor(zl / 7.0);
+        float sx = fract(p.x);
+        float sz = zl - eid * 7.0;
+        float weltX = (1.0 - smoothstep(0.0, 0.045 + fwp.x, sx)) * (1.0 - smoothstep(0.03, 0.09, fwp.x));
+        float weltZ = (1.0 - smoothstep(0.0, 0.045 + fwp.y, sz)) * (1.0 - smoothstep(0.03, 0.09, fwp.y));
+        float bead = max(aLine(min(sx, 1.0 - sx), 0.013, fwp.x), aLine(min(sz, 7.0 - sz), 0.013, fwp.y));
+        float sheet = aHash(vec2(rid, eid) + sd * 13.0);
+        // la rive haute du lé (bourrelet soudé) : fil clair qui se lit de loin
+        float hi = aLine(abs(sx - 0.03), 0.012, fwp.x) + aLine(abs(sz - 0.03), 0.012, fwp.y);
+        col = mix(col, vec3(0.66, 0.63, 0.6), 0.45) * 0.92;
+        col *= (0.86 + 0.22 * big) * (0.94 + 0.1 * fine) * (0.88 + 0.2 * sheet) * (1.0 - 0.4 * bead) * (1.0 + 0.12 * min(hi, 1.0));
+        pN = normalize(pN + vec3(-0.7 * weltX, 0.0, -0.7 * weltZ));
+        // rustines : pièces de membrane plus fraîches, au bord marqué
+        vec2 pc = floor(p / 2.6);
+        float ph = aHash(pc + sd * 7.0 + 5.3);
+        vec2 pl = p - pc * 2.6;
+        vec2 pm = vec2(0.15 + 1.1 * fract(ph * 7.1), 0.15 + 1.1 * fract(ph * 3.3));
+        vec2 pM = min(pm + vec2(0.45 + 0.8 * fract(ph * 5.7), 0.35 + 0.7 * fract(ph * 9.1)), vec2(2.45));
+        float rp = aRect(pl, pm, pM, fwp + 0.004) * step(0.64, ph);
+        float rpe = max(rp - aRect(pl, pm + 0.035, pM - 0.035, fwp), 0.0);
+        col *= mix(1.0, step(0.88, ph) > 0.5 ? 1.12 : 0.74 + 0.1 * fract(ph * 17.0), rp) * (1.0 - 0.28 * rpe);
+        // auréoles de flaques séchées (là où l'eau stagne, la membrane est plus lisse)
+        float L = texture2D(uNoise, p * 0.019 + sd).r * 0.7 + texture2D(uNoise, p * 0.071 + sd).g * 0.3;
+        float pond = smoothstep(0.6, 0.63, L);
+        float tide = (1.0 - smoothstep(0.0, 0.007, abs(L - 0.605))) * nearR;
+        col *= (1.0 - 0.1 * pond) * (1.0 - 0.32 * tide);
+        // gravier de lestage : bande en rive, plaques poussées par le vent
+        float de = min(min(uv.x, W - uv.x), min(uv.y, H - uv.y));
+        float gv = texture2D(uNoise, p * 0.11 + sd).b;
+        float grav = max(1.0 - smoothstep(0.4, 0.47, de + (gv - 0.5) * 0.2), smoothstep(0.71, 0.74, texture2D(uNoise, p * 0.027 + sd + 0.5).r));
+        float wn = texture2D(uNoise, p * 1.9).a, wn2 = texture2D(uNoise, p * 0.61 + 0.3).a;
+        vec3 gcol = vec3(0.47, 0.42, 0.37) * (0.66 + 0.62 * mix(0.5, wn, nearR)) * (0.86 + 0.28 * mix(0.5, wn2, nearR));
+        col = mix(col, gcol, grav);
+        pN = normalize(mix(pN, n, grav));
+        // crasse au pied des relevés
+        col *= 1.0 - 0.2 * (1.0 - smoothstep(0.0, 0.3, de));
+        rough = mix(mix(0.92, 0.5, pond), 1.0, grav);
       }
       col *= 1.0 + 0.05 * edge;
     } else if (kind == 3.0) { // enduit
       col *= (0.955 + 0.06 * big) * (0.99 + 0.02 * fine);
+      if (isTop > 0.5 && min(W, H) > 0.25) {
+        // dessus des corniches, bandeaux et chaperons : crasse déposée, lichens, plus
+        // propre au bord où la pluie lave
+        float de = min(min(uv.x, W - uv.x), min(uv.y, H - uv.y));
+        float dirt = smoothstep(0.35, 0.75, texture2D(uNoise, vWPos.xz * 0.21 + seed).g * 0.6 + texture2D(uNoise, vWPos.xz * 0.06).r * 0.4);
+        col *= 1.0 - 0.15 * dirt * smoothstep(0.03, 0.2, de);
+        col = mix(col, col * vec3(0.9, 0.92, 0.8), smoothstep(0.7, 0.85, big) * 0.5);
+      }
+      if (isSide > 0.5 && W > 1.0 && H > 0.45) {
+        // mouchetis de l'enduit et reprises : rectangles refaits, un ton plus clair ou plus gris
+        col *= 0.95 + 0.1 * texture2D(uNoise, uv * vec2(0.21, 0.18) + seed).b;
+        // nuées de l'enduit à l'échelle du mètre
+        col *= 0.93 + 0.13 * texture2D(uNoise, uv * 0.045 + seed * 2.0).g;
+        vec2 cs = vec2(1.9, 1.15);
+        vec2 pc = floor(uv / cs);
+        float ph = aHash(pc + seed * 11.0);
+        vec2 pl = uv - pc * cs;
+        vec2 pm = vec2(0.1 + 0.8 * fract(ph * 7.3), 0.08 + 0.5 * fract(ph * 3.7));
+        vec2 pM = min(pm + vec2(0.35 + 0.7 * fract(ph * 5.3), 0.25 + 0.45 * fract(ph * 9.1)), cs - 0.05);
+        float rp = aRect(pl, pm, pM, fw + 0.008) * step(0.7, ph) * (1.0 - smoothstep(0.04, 0.12, max(fw.x, fw.y)));
+        col *= mix(1.0, step(0.86, ph) > 0.5 ? 1.06 : 0.91, rp);
+        float rpe = max(rp - aRect(pl, pm + 0.02, pM - 0.02, fw + 0.004), 0.0);
+        col *= 1.0 - 0.08 * rpe;
+      }
       col *= 1.0 + 0.08 * edge;
       rough = 0.86;
     } else if (kind == 4.0) { // bois
@@ -413,17 +562,78 @@ const ARCH_FRAG_HEAD = /* glsl */ `
         pN = normalize(vec3(alongU ? 0.0 : bvw * 0.45, 1.0, alongU ? bvw * 0.45 : 0.0));
       }
       rough = 0.7;
-    } else if (kind == 5.0) { // corail
+    } else if (kind == 5.0) { // corail : enduit peint à grain, levées, joints creux, reprises, écaillures
       col *= (0.95 + 0.06 * big);
-      if (isSide > 0.5 && W > 1.5) {
-        // Panneaux peints : joints réguliers, utiles aussi pour sentir la vitesse en course murale
-        float pid = aHash(vec2(floor(uv.x / 1.2), floor(uv.y / 2.4)) + 3.7);
-        float jn = max(aLine(aGridDist(uv.x, 1.2), 0.008, fw.x), aLine(aGridDist(uv.y, 2.4), 0.008, fw.y));
-        col *= (0.97 + 0.05 * pid) * (1.0 - 0.18 * jn);
+      rough = 0.64;
+      if (isSide > 0.5 && W > 1.0 && H > 1.2) {
+        // fondus par axe : vu en enfilade (course murale), les levées horizontales restent nettes
+        float nearC = 1.0 - smoothstep(0.03, 0.08, max(fw.x, fw.y));
+        float nearY = 1.0 - smoothstep(0.04, 0.12, fw.y);
+        // levées d'enduit d'environ 1,3 m au bord ondulé, chacune de sa teinte
+        vec4 rn = textureLod(uNoise, vec2(uv.x * 0.09 + seed * 5.0, 0.21 + seed), 0.0);
+        float ly = uv.y + (rn.g - 0.5) * 0.1 + (rn.b - 0.5) * 0.04;
+        float lid = floor(ly / 1.3);
+        float lh = aHash(vec2(lid, seed * 37.0));
+        float lj = aLine(aGridDist(ly, 1.3), 0.009, fw.y);
+        // joints creux verticaux tous les 2,4 m : le rythme se lit en course murale
+        float sxg = fract(uv.x / 2.4 + 0.5) - 0.5;
+        float gx = abs(sxg) * 2.4;
+        float groove = aLine(gx, 0.013, fw.x);
+        float cell = aHash(vec2(floor(uv.x / 2.4), lid) + seed * 3.1);
+        // grain : mouchetis de 5 à 10 cm, nuées de la peinture
+        float mott = texture2D(uNoise, uv * vec2(0.23, 0.2) + seed).b;
+        float cloud = texture2D(uNoise, uv * vec2(0.05, 0.04) + seed * 2.0).g;
+        col *= (0.93 + 0.13 * mix(0.5, lh, nearY)) * (0.97 + 0.06 * cell) * (0.93 + 0.14 * mix(0.5, mott, nearC)) * (0.9 + 0.18 * cloud);
+        // chaque levée et chaque nuée a sa nuance (du saumon à l'orangé) : le dessin
+        // survit même quand le rouge sature en plein soleil
+        float hueL = mix(0.5, lh, nearY) - 0.5;
+        col *= vec3(1.0 + 0.06 * hueL, 1.0 + 0.3 * hueL + 0.14 * (cloud - 0.5), 1.0 + 0.38 * hueL + 0.2 * (cloud - 0.5));
+        // reprises : rectangles repeints, plus frais, au bord net
+        vec2 cl = vec2(uv.x - floor(uv.x / 2.4) * 2.4, ly - lid * 1.3);
+        vec2 pm = vec2(0.15 + 1.1 * fract(cell * 7.3), 0.12 + 0.45 * fract(cell * 3.9));
+        vec2 pM = min(pm + vec2(0.45 + 0.8 * fract(cell * 5.1), 0.3 + 0.5 * fract(cell * 9.7)), vec2(2.3, 1.22));
+        float rp = aRect(cl, pm, pM, fw + 0.006) * step(0.72, cell);
+        col = mix(col, col * vec3(1.04, 1.14, 1.06), rp);
+        float rpe = max(rp - aRect(cl, pm + 0.025, pM - 0.025, fw + 0.004), 0.0);
+        col *= 1.0 - 0.07 * rpe * nearC;
+        // grands murs : plus sombres et plus humides vers le bas (au-dessus du vide)
+        col *= mix(1.0, 0.84, smoothstep(4.5, 13.0, uv.y));
+        // haut délavé par le soleil, coulures sous le couronnement
+        float sunFade = exp(-uv.y * 0.3);
+        col = mix(col, vec3(dot(col, vec3(0.3, 0.5, 0.2))) * vec3(1.2, 1.0, 0.9), 0.12 * sunFade);
+        vec4 sk = textureLod(uNoise, vec2(uv.x * 0.34 + seed, uv.y * 0.018 + seed), 0.0);
+        float run = smoothstep(0.42, 0.85, sk.b * 0.6 + sk.g * 0.4) * exp(-uv.y * 0.2);
+        col *= 1.0 - 0.17 * run;
+        col = mix(col, col * vec3(0.9, 0.84, 0.88), run * 0.5);
+        // joints : fond sombre, flancs qui prennent ou perdent la lumière
+        col *= (1.0 - 0.32 * groove) * (1.0 - 0.2 * lj);
+        // la levée du dessous déborde un peu : fil de lumière sous chaque joint
+        float lip = aLine(abs(fract(ly / 1.3) * 1.3 - 0.022), 0.007, fw.y);
+        col *= 1.0 + 0.1 * lip * nearY;
+        float gs = (1.0 - smoothstep(0.0, 0.017 + fw.x, gx)) * nearC;
+        pN = normalize(pN - Tu * sign(sxg) * 0.75 * gs);
+        // écaillures : la peinture saute en plaques et laisse voir l'enduit clair
+        // (rares, petites, au pied de chaque levée où l'eau rejaillit)
+        float footL = smoothstep(0.85, 1.22, ly - lid * 1.3);
+        float fl = texture2D(uNoise, uv * 0.55 + seed * 9.0).b * 0.6 + texture2D(uNoise, uv * 0.07 + seed * 4.0).r * 0.4;
+        float flake = smoothstep(0.75, 0.77, fl) * nearC * footL;
+        col = mix(col, vec3(0.6, 0.5, 0.43) * (0.9 + 0.15 * mott), flake * 0.8);
+        rough = mix(rough, 0.92, flake);
       }
-      col *= 1.0 + 0.1 * edge;
-      emit += col * 0.14;
-      rough = 0.62;
+      if (isTop > 0.5) {
+        // dessus des chaperons et des bandes d'appel : peinture usée par les pas
+        float mt = texture2D(uNoise, vWPos.xz * 0.27 + seed).b;
+        float de = min(min(uv.x, W - uv.x), min(uv.y, H - uv.y));
+        float worn = smoothstep(0.05, 0.3, de) * smoothstep(0.45, 0.75, texture2D(uNoise, vWPos.xz * 0.09 + seed).g);
+        col *= 0.93 + 0.12 * mt;
+        col = mix(col, vec3(0.74, 0.62, 0.54), worn * 0.45);
+        rough = mix(rough, 0.5, worn);
+      }
+      col *= 1.0 + 0.06 * edge;
+      // albédo retenu (le plein soleil ne sature plus et garde le grain), lueur propre
+      // un peu plus forte : à l'ombre le corail reste aussi lisible qu'avant
+      col *= 0.8;
+      emit += col * 0.16;
     } else if (kind == 6.0) { // métal
       col *= 0.96 + 0.05 * textureLod(uNoise, wp * vec2(0.03, 0.5), 1.0).b;
       col *= 1.0 + 0.12 * edge;
@@ -443,13 +653,22 @@ const ARCH_FRAG_HEAD = /* glsl */ `
       }
       col *= 1.0 + 0.1 * edge;
       rough = 0.5;
-    } else if (kind == 8.0) { // verre
+    } else if (kind == 8.0) { // verre : intérieur sombre, reflet de Schlick
       vec3 R = reflect(V, n);
       R.y = abs(R.y);
-      float fres = 0.2 + 0.8 * pow(1.0 - max(dot(-V, n), 0.0), 4.0);
-      col = col * 0.25;
-      emit += aSky(normalize(R)) * (0.25 + 0.55 * fres);
+      float fres = 0.04 + 0.96 * pow(1.0 - max(dot(-V, n), 0.0), 5.0);
+      col = vec3(0.05, 0.06, 0.09);
+      emit += aSky(normalize(R)) * fres;
       rough = 0.1;
+    } else if (kind == 16.0) { // relevé d'étanchéité : bitume à paillettes, pied encrassé
+      float spk = texture2D(uNoise, (isTop > 0.5 ? vWPos.xz : uv) * 1.7 + seed).a;
+      col *= (0.9 + 0.16 * spk) * (0.94 + 0.1 * big);
+      if (isSide > 0.5) {
+        col *= 1.0 - 0.18 * smoothstep(H * 0.5, H, uv.y);
+        float lap = aLine(aGridDist(uv.x, 1.0), 0.004, fw.x);
+        col *= 1.0 - 0.18 * lap;
+      }
+      rough = 0.9;
     } else if (kind == 9.0) { // terre
       float m = textureLod(uNoise, vWPos.xz * 0.1, 0.0).b;
       col = mix(vec3(0.33, 0.25, 0.2), vec3(0.42, 0.5, 0.3), smoothstep(0.55, 0.8, m)) * (0.8 + 0.3 * fine);
@@ -465,7 +684,11 @@ const ARCH_FRAG_HEAD = /* glsl */ `
       float j1 = aLine(aGridDist(by, bh), 0.01, fw.y);
       float j2 = aLine(aGridDist(bx + (isTop > 0.5 ? 0.0 : off), 1.2), 0.01, fw.x);
       float bid = aHash(vec2(floor((bx + off) / 1.2), floor(by / bh)));
-      col *= (0.93 + 0.08 * bid) * (0.94 + 0.08 * big) * (1.0 - 0.18 * max(j1, j2));
+      float bid2 = aHash(vec2(floor((bx + off) / 1.2), floor(by / bh)) + 7.7);
+      col *= (0.9 + 0.15 * bid) * (0.93 + 0.1 * big) * (1.0 - 0.22 * max(j1, j2));
+      // quelques blocs plus chauds ou plus gris, calcin en surface
+      col *= bid2 > 0.86 ? vec3(1.04, 0.99, 0.93) : (bid2 < 0.1 ? vec3(0.93, 0.94, 0.96) : vec3(1.0));
+      col *= 0.96 + 0.07 * texture2D(uNoise, (isTop > 0.5 ? vWPos.xz : uv) * 0.24 + seed).b;
       col *= 1.0 + 0.07 * edge;
       // bossage : arêtes des blocs abattues (relief sous la lumière rasante)
       vec2 bfw = isTop > 0.5 ? fwp : fw;
@@ -510,8 +733,9 @@ const ARCH_FRAG_HEAD = /* glsl */ `
 
     // --- Patine : coulures sous les arêtes hautes, pied des murs encrassé ---
     if (isSide > 0.5 && kind != 5.0 && kind != 8.0 && kind != 10.0 && kind != 9.0) {
-      vec4 sk4 = textureLod(uNoise, vec2((uv.x + vFace.z * 13.0) * 0.29, uv.y * 0.012 + vFace.z), 0.0);
-      float streak = smoothstep(0.4, 0.82, sk4.b * 0.55 + sk4.g * 0.45);
+      // coulures de 15 à 60 cm de large : elles se lisent encore à vingt mètres
+      vec4 sk4 = textureLod(uNoise, vec2((uv.x + vFace.z * 13.0) * 0.12, uv.y * 0.01 + vFace.z), 0.0);
+      float streak = smoothstep(0.42, 0.8, sk4.g * 0.6 + sk4.b * 0.4);
       float far2 = smoothstep(0.03, 0.12, max(fw.x, fw.y));
       // coulures qui partent du haut de chaque volume
       float run = streak * exp(-clamp(uv.y, 0.0, 100.0) * (kind == 2.0 ? 0.22 : 0.9)) * (1.0 - far2 * 0.6);
@@ -522,9 +746,16 @@ const ARCH_FRAG_HEAD = /* glsl */ `
       // sous la corniche des immeubles : ombre douce
       float cor = kind == 2.0 ? (1.0 - smoothstep(0.42, 1.9, uv.y)) * step(0.42, uv.y) : 0.0;
       float wash = kind == 2.0 ? streak * 0.05 : 0.0;
-      col *= 1.0 - clamp(0.15 * run + 0.32 * foot + 0.19 * cor + wash, 0.0, 0.6);
-      // marbrures chaudes et grises (vieil enduit)
-      col = mix(col, col * vec3(0.92, 0.89, 0.87), smoothstep(0.45, 0.8, big) * 0.6);
+      col *= 1.0 - clamp(0.21 * run + 0.34 * foot + 0.26 * cor + wash, 0.0, 0.6);
+      // marbrures chaudes et grises (vieil enduit), grandes taches d'humidité de 2 à 5 m
+      col = mix(col, col * vec3(0.9, 0.87, 0.85), smoothstep(0.42, 0.78, big) * 0.75);
+      float damp = smoothstep(0.55, 0.8, bigLow);
+      col *= 1.0 - 0.09 * damp;
+    }
+
+    // --- Arêtes abattues, usées, épaufrées (boîtes seulement, ni dessous ni lumières) ---
+    if (bevelOK > 0.5 && (isTop > 0.5 || isSide > 0.5) && kind != 0.0 && kind != 8.0 && kind != 9.0 && kind != 10.0 && kind != 13.0 && kind != 15.0) {
+      aEdges(col, rough, kind, uv, W, H, fw, Tu, Tv, seed);
     }
   }
 `;
@@ -549,7 +780,7 @@ export function createArchMaterial({ shadows = true } = {}) {
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = pMetal;')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += pEmit;');
   };
-  mat.customProgramCacheKey = () => 'aube-arch-v2';
+  mat.customProgramCacheKey = () => 'aube-arch-v3';
   mat.userData.uniforms = uniforms;
   mat.userData.shadows = shadows;
   return mat;

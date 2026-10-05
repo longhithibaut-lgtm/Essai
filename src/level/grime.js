@@ -25,12 +25,12 @@ export function junctionGrime(list, shadows, groundAt) {
           const zm = (zo0 + zo1) / 2;
           if (groundAt && !groundAt(c + sg * 0.35, zm, y)) continue;
           shadows.addWall(c, zo0, c, zo1, y, h, 0.85, sg, 0);
-          shadows.add(c, zm, 1.5, zo1 - zo0, y, 1.0);
+          shadows.add(c, zm, 1.1, zo1 - zo0, y, 0.7);
         } else {
           const xm = (xo0 + xo1) / 2;
           if (groundAt && !groundAt(xm, c + sg * 0.35, y)) continue;
           shadows.addWall(xo0, c, xo1, c, y, h, 0.85, 0, sg);
-          shadows.add(xm, c, xo1 - xo0, 1.5, y, 1.0);
+          shadows.add(xm, c, xo1 - xo0, 1.1, y, 0.7);
         }
       }
     }

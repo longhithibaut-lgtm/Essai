@@ -120,8 +120,50 @@ function montage(files, dest, tile = '5x2', labels = null) {
   }
 }
 
+// Une seule capture à la fois sur la machine : plusieurs Chromium en rendu
+// logiciel en parallèle font grimper la mémoire jusqu'à faire tomber le conteneur.
+const LOCK = '/tmp/aube-capture.lock';
+let lockHeld = false;
+async function acquireLock() {
+  if (process.argv.includes('--no-lock')) return;
+  let warned = false;
+  for (;;) {
+    try {
+      fs.mkdirSync(LOCK);
+      fs.writeFileSync(path.join(LOCK, 'pid'), String(process.pid));
+      lockHeld = true;
+      return;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      let pid = 0;
+      try { pid = Number(fs.readFileSync(path.join(LOCK, 'pid'), 'utf8')); } catch { /* pas encore écrit */ }
+      let alive = false;
+      if (pid) { try { process.kill(pid, 0); alive = true; } catch { /* processus disparu */ } }
+      if (!alive) {
+        try {
+          const age = Date.now() - fs.statSync(LOCK).mtimeMs;
+          if (pid || age > 10000) fs.rmSync(LOCK, { recursive: true, force: true });
+        } catch { /* déjà libéré */ }
+        continue;
+      }
+      if (!warned) { console.error('Une autre capture tourne déjà sur la machine : attente de son tour…'); warned = true; }
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
+}
+function releaseLock() {
+  if (!lockHeld) return;
+  try {
+    if (Number(fs.readFileSync(path.join(LOCK, 'pid'), 'utf8')) === process.pid) fs.rmSync(LOCK, { recursive: true, force: true });
+  } catch { /* rien à libérer */ }
+  lockHeld = false;
+}
+process.on('exit', releaseLock);
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { releaseLock(); process.exit(130); });
+
 async function main() {
   fs.mkdirSync(out, { recursive: true });
+  await acquireLock();
   const server = await serve(root);
   const port = server.address().port;
   const base = `http://127.0.0.1:${port}/`;
