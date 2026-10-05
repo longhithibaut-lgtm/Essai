@@ -476,8 +476,35 @@ const ARCH_FRAG_HEAD = /* glsl */ `
         float h = aHash(tid);
         float g = max(aLine(aGridDist(pp.x, ts), 0.012, fwp.x), aLine(aGridDist(pp.y, ts), 0.012, fwp.y));
         float h2 = aHash(tid + 17.3);
-        float tv = mix(0.24, 0.22, step(0.75, vFace.z));
+        float tv = mix(0.26, 0.3, step(0.75, vFace.z));
         col *= (1.0 - tv * 0.5 + tv * h) * (0.9 + 0.16 * big) * (0.97 + 0.06 * fine);
+        // chaque dalle a sa nuance (pierre plus chaude, plus grise, plus rosée)
+        col *= mix(vec3(1.0), h2 < 0.33 ? vec3(1.03, 0.99, 0.94) : (h2 < 0.66 ? vec3(0.97, 0.98, 1.0) : vec3(1.02, 0.97, 0.96)), 0.8);
+        vec2 tl0 = pp / ts - tid;
+        if (ts > 0.75) {
+          // pierre litée : veines douces dans le sens du banc, propres à chaque dalle
+          bool vx = h > 0.5;
+          float acr = (vx ? tl0.y : tl0.x) * ts, alg = (vx ? tl0.x : tl0.y) * ts;
+          float vein = textureLod(uNoise, vec2(acr * 0.55 + h * 13.0, alg * 0.04 + h2 * 7.0), 0.0).g;
+          float vein2 = textureLod(uNoise, vec2(acr * 1.9 + h2 * 5.0, alg * 0.12 + h * 3.0), 0.0).b;
+          col *= 0.9 + 0.16 * vein + 0.07 * vein2 * (1.0 - smoothstep(0.01, 0.04, max(fwp.x, fwp.y)));
+          // pores du travertin (de près)
+          vec2 pq = pp / 0.022;
+          vec2 pc2 = floor(pq);
+          float ph2 = aHash(pc2 + h * 41.0);
+          float prr = 0.12 + 0.22 * fract(ph2 * 7.7);
+          float po = (1.0 - smoothstep(prr * 0.6, prr, length(fract(pq) - 0.5 - (vec2(fract(ph2 * 3.1), fract(ph2 * 5.3)) - 0.5) * 0.5)));
+          po *= step(0.86, ph2) * (1.0 - smoothstep(0.003, 0.008, max(fwp.x, fwp.y)));
+          col *= 1.0 - 0.3 * po;
+        }
+        // crasse qui borde les joints : un liseré de 4 à 6 cm, lisible à dix mètres
+        vec2 dj = min(tl0, 1.0 - tl0) * ts;
+        float halo = 1.0 - smoothstep(0.012, 0.07, min(dj.x, dj.y));
+        col *= 1.0 - 0.1 * halo * (0.6 + 0.8 * fine);
+        // coins épaufrés : un éclat triangulaire sombre à quelques angles
+        float cn0 = step(0.8, aHash(tid + 5.1)) * step(abs(step(0.5, tl0.x) + 2.0 * step(0.5, tl0.y) - floor(aHash(tid + 9.3) * 4.0)), 0.5);
+        float ch = 1.0 - smoothstep(0.05, 0.07, dj.x + dj.y);
+        col *= 1.0 - 0.25 * ch * cn0 * (1.0 - smoothstep(0.01, 0.04, max(fwp.x, fwp.y)));
         // quelques dalles remplacées, plus sombres ou plus chaudes
         col *= h2 > 0.94 ? 0.86 : (h2 < 0.05 ? 1.04 : 1.0);
         col = mix(col, col * vec3(1.03, 0.97, 0.92), step(0.9, h) * 0.6);
@@ -761,10 +788,12 @@ const ARCH_FRAG_HEAD = /* glsl */ `
       float off = mod(row, 2.0) * 0.6;
       float bx = isTop > 0.5 ? vWPos.x : uv.x;
       float by = isTop > 0.5 ? vWPos.z : uv.y;
-      float j1 = aLine(aGridDist(by, bh), 0.012, fw.y);
-      float j2 = aLine(aGridDist(bx + (isTop > 0.5 ? 0.0 : off), 1.2), 0.012, fw.x);
-      float bid = aHash(vec2(floor((bx + off) / 1.2), floor(by / bh)));
-      float bid2 = aHash(vec2(floor((bx + off) / 1.2), floor(by / bh)) + 7.7);
+      // style 1 : bloc taillé d'une pièce (mur appareillé en vrais blocs) : pas de faux joints
+      float mono = step(0.99, vFace.z);
+      float j1 = aLine(aGridDist(by, bh), 0.012, fw.y) * (1.0 - mono);
+      float j2 = aLine(aGridDist(bx + (isTop > 0.5 ? 0.0 : off), 1.2), 0.012, fw.x) * (1.0 - mono);
+      float bid = mix(aHash(vec2(floor((bx + off) / 1.2), floor(by / bh))), 0.5, mono);
+      float bid2 = mix(aHash(vec2(floor((bx + off) / 1.2), floor(by / bh)) + 7.7), 0.5, mono);
       col *= (0.86 + 0.22 * bid) * (0.92 + 0.12 * big) * (1.0 - 0.34 * max(j1, j2));
       // quelques blocs plus chauds ou plus gris, calcin en surface
       col *= bid2 > 0.86 ? vec3(1.04, 0.99, 0.93) : (bid2 < 0.1 ? vec3(0.93, 0.94, 0.96) : vec3(1.0));
@@ -772,7 +801,7 @@ const ARCH_FRAG_HEAD = /* glsl */ `
       col *= 1.0 + 0.07 * edge;
       // bossage : arêtes des blocs abattues (relief sous la lumière rasante)
       vec2 bfw = isTop > 0.5 ? fwp : fw;
-      vec2 sb = aBevel(vec2(bx + (isTop > 0.5 ? 0.0 : off), by), vec2(1.2, bh), 0.045) * (1.0 - smoothstep(0.008, 0.035, max(bfw.x, bfw.y)));
+      vec2 sb = aBevel(vec2(bx + (isTop > 0.5 ? 0.0 : off), by), vec2(1.2, bh), 0.045) * (1.0 - smoothstep(0.008, 0.035, max(bfw.x, bfw.y))) * (1.0 - mono);
       if (isTop > 0.5) pN = normalize(n + vec3(sb.x * 0.5, 0.0, sb.y * 0.5));
       else if (isSide > 0.5) {
         vec3 Ts = normalize(cross(vec3(0.0, 1.0, 0.0), n));

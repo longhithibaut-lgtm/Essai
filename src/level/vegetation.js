@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { K, ATLAS } from './surfaces.js';
+import { rng } from './kit.js';
 
 // Végétation : arbres en fleurs, oliviers, cyprès, buissons, lavande, lierre qui
 // retombe des façades. Volumes adoucis (normales tournées vers l'extérieur du
@@ -215,16 +216,40 @@ export function hedge(ctx, minX, minZ, maxX, maxZ, y, o = {}) {
 
 // Rangée de lavande en fleurs
 export function lavender(ctx, x, y, z, w, d, o = {}) {
-  const rand = ctx.rand;
+  // Touffes de lavande : un coussin gris-vert bas, puis des gerbes de tiges fines dont
+  // la pointe vire au violet (cartes croisées teintées du pied à la pointe).
+  // Tirage propre à chaque massif : retoucher la lavande ne redistribue pas le reste.
+  const rand = rng(Math.floor(Math.abs(x * 131 + z * 17 + w * 7)) + 5);
+  const lctx = { ...ctx, rand };
   const n = Math.floor(w * d * (o.density ?? 5));
+  const f = ctx.foliage;
+  const [u0, v0, u1, v1] = ATLAS.grass;
   for (let i = 0; i < n; i++) {
     const px = x + (rand() - 0.5) * w, pz = z + (rand() - 0.5) * d;
-    const r = 0.16 + rand() * 0.1;
-    blob(ctx, px, y + r * 0.8, pz, r, pick(LEAF.olive, rand), [px, y, pz], { detail: 0, height: r, sway: 0.2 });
-    for (let k = 0; k < 4; k++) {
-      ctx.arch.box(px + (rand() - 0.5) * r * 1.6, y + r * 1.5 + rand() * 0.16, pz + (rand() - 0.5) * r * 1.6, 0.04, 0.14, 0.04, { kind: K.PLAIN, color: pick(LEAF.lavender, rand) });
+    const r = 0.15 + rand() * 0.09;
+    blob(lctx, px, y + r * 0.45, pz, r, pick(LEAF.olive, rand), [px, y, pz], { detail: 1, height: r * 0.6, sy: 0.55, sway: 0.15, dim: 0.88 });
+    const leaf = new THREE.Color(pick(LEAF.olive, rand)).multiplyScalar(0.8);
+    const flower = new THREE.Color(pick([0x8f72c8, 0x7f63bb, 0x9c82d2, 0x8a6dbf], rand));
+    const bot = [leaf.r * 0.7, leaf.g * 0.7, leaf.b * 0.7];
+    const top = [flower.r * 0.8, flower.g * 0.8, flower.b * 0.8];
+    const a0 = rand() * Math.PI;
+    for (let k = 0; k < 3; k++) {
+      const h = 0.36 + rand() * 0.2, wd = r * 2.4 + rand() * 0.12;
+      const aa = a0 + k * Math.PI / 3;
+      const dx = Math.cos(aa) * wd / 2, dz = Math.sin(aa) * wd / 2;
+      const yb = y + r * 0.35;
+      const ids = [
+        f.vertex(px - dx, yb, pz - dz, 0, 1, 0, u0, v0, bot, K.PLAIN, 1, 1, 0, 0),
+        f.vertex(px + dx, yb, pz + dz, 0, 1, 0, u1, v0, bot, K.PLAIN, 1, 1, 0, 0),
+        f.vertex(px + dx * 1.25, yb + h, pz + dz * 1.25, 0, 1, 0, u1, v1, top, K.PLAIN, 1, 1, 0, 0.7),
+        f.vertex(px - dx * 1.25, yb + h, pz - dz * 1.25, 0, 1, 0, u0, v1, top, K.PLAIN, 1, 1, 0, 0.7),
+      ];
+      f.quadIdx(ids[0], ids[1], ids[2], ids[3]);
     }
   }
+  // L'ancienne lavande puisait 21 tirages par touffe dans le générateur commun : on les
+  // consomme encore, pour que tout ce qui suit garde sa place et sa forme.
+  for (let i = 0; i < n * 21; i++) ctx.rand();
 }
 
 // Lierre en rideau qui retombe d'un rebord le long d'une façade. (nx, nz) : normale de la façade.

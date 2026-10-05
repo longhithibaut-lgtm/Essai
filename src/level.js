@@ -3,7 +3,7 @@ import { K, createArchMaterial, createFoliageMaterial, createFabricMaterial, cre
 import { Batch, rng } from './level/kit.js';
 import {
   PAL, mixHex, building, parapet, railing, edgeMark, acUnit, waterTank, vent, chimney, antenna, hut, planter, bench,
-  lantern, pot, crate, cafeSet, stringLights, shadeSail, laundry, duct, skylight,
+  lantern, pot, crate, cafeSet, stringLights, shadeSail, laundry, duct, skylight, upstand,
 } from './level/props.js';
 import { tree, cypress, bush, hedge, lavender, ivy, grass, wisteria } from './level/vegetation.js';
 import { roofDress, facadeDress } from './level/dress.js';
@@ -12,7 +12,7 @@ import { Signs } from './level/signs.js';
 import { ContactShadows } from './level/ao.js';
 import { inlay, path, drain, gutter, pipes, hatch, basin, shiftedSlabs } from './level/ground.js';
 import { junctionGrime } from './level/grime.js';
-import { tieAnchor, downpipe } from './level/details.js';
+import { tieAnchor, downpipe, blockWall } from './level/details.js';
 
 // Le parcours : des terrasses blanches posées sur de hautes tours, au-dessus des
 // nuages, dans une ville calme. Le joueur avance vers -z. Collisions : boîtes alignées.
@@ -275,6 +275,10 @@ export function buildLevel(scene, physics, materials) {
   // =====================================================================
   const bI1 = B({ minX: -1, maxX: 7, minZ: -114, maxZ: -107, top: 2.6, style: 0.52, color: PAL.plasterCool, deck: 'roof', upstand: ['-x', '+x'] });
   railing(ctx, 6.92, -107.2, 6.92, -113.8, 2.6);
+  // Relevés en rive avant et arrière, interrompus là où l'on se reçoit et d'où l'on repart
+  upstand(A, bI1, '+z', 0.15, 3.3, 2.6);
+  upstand(A, bI1, '+z', 6.3, 7.85, 2.6);
+  upstand(A, bI1, '-z', 4.7, 7.85, 2.6);
   acUnit(ctx, -0.1, 2.6, -108.8, { collide: true, rotY: Math.PI / 2 });
   acUnit(ctx, -0.1, 2.6, -111.2, { collide: true, rotY: Math.PI / 2 });
   vent(ctx, 1.2, 2.6, -113.2);
@@ -363,7 +367,9 @@ export function buildLevel(scene, physics, materials) {
   shiftedSlabs(ctx, 5.4, 12.6, -171.5, -147.5, K_TOP, { tile: 0.1, n: 14, rand: slabRand, color: 0xe8c6ae, gravel: 0.35 });
   drain(ctx, 11.0, K_TOP, -163.8);
   // Obstacle 1 : jardinière de pierre à franchir
-  A.boxMinMax(6.0, K_TOP, -153.8, 12.0, K_TOP + 0.84, -153.0, { kind: K.STONE, color: PAL.stone, bevel: 0.035, skipBottom: true, skipTop: true });
+  // jardinière appareillée en vrais blocs (joints en V lisibles même à contre-jour)
+  const stoneRand = rng(91);
+  blockWall(A, 6.0, K_TOP, -153.8, 12.0, K_TOP + 0.84, -153.0, { rows: 2, block: 1.25, rand: stoneRand });
   A.boxMinMax(5.95, K_TOP + 0.84, -153.85, 12.05, K_TOP + 0.9, -152.95, { kind: K.CORAL, color: PAL.coral, bevel: 0.018 });
   ctx.solid([6.0, K_TOP, -153.8], [12.0, K_TOP + 0.9, -153.0], 'vault');
   for (const x of [5.5, 12.5]) {
@@ -389,7 +395,7 @@ export function buildLevel(scene, physics, materials) {
     }
   }
   // Obstacle 3 : banc-jardinière bas
-  A.boxMinMax(6.5, K_TOP, -166.6, 11.0, K_TOP + 0.56, -166.0, { kind: K.STONE, color: PAL.stone, bevel: 0.035, skipBottom: true, skipTop: true });
+  blockWall(A, 6.5, K_TOP, -166.6, 11.0, K_TOP + 0.56, -166.0, { rows: 1, block: 0.95, rand: stoneRand });
   A.boxMinMax(6.45, K_TOP + 0.56, -166.65, 11.05, K_TOP + 0.62, -165.95, { kind: K.CORAL, color: PAL.coral, bevel: 0.018 });
   ctx.solid([6.5, K_TOP, -166.6], [11.0, K_TOP + 0.62, -166.0], 'vault');
   crate(ctx, 12.3, K_TOP, -158.0, 0.6);

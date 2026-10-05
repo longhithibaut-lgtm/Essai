@@ -464,10 +464,34 @@ export function pot(ctx, x, y, z, o = {}) {
   return y + h;
 }
 
+// Lanterneau : costière enduite, verrière à deux pans sur châssis de métal, traverses.
 export function skylight(ctx, x, y, z, w, d, o = {}) {
   const b = o.batch ?? ctx.arch;
-  b.box(x, y + 0.2, z, w, 0.4, d, { kind: K.METAL, color: PAL.metalLight, bevel: 0.03, skipBottom: true });
-  b.box(x, y + 0.42, z, w - 0.12, 0.05, d - 0.12, { kind: K.GLASS, color: 0xb8c4d0 });
+  const far = b === ctx.far;
+  b.box(x, y + 0.2, z, w, 0.4, d, { kind: K.PLASTER, color: PAL.plaster, bevel: far ? 0 : 0.03, skipBottom: true });
+  b.box(x, y + 0.43, z, w + 0.06, 0.06, d + 0.06, { kind: K.METAL, color: PAL.metalDark, bevel: far ? 0 : 0.012 });
+  const rh = Math.min(w, d) * 0.28;
+  b.ridge(x - w / 2 + 0.04, y + 0.46, z - d / 2 + 0.04, x + w / 2 - 0.04, y + 0.48, z + d / 2 - 0.04, rh, { kind: K.GLASS, color: 0xb8c4d0 });
+  if (!far) {
+    // traverses du châssis, en travers du faîte
+    const alongX = w >= d;
+    const L = alongX ? w : d;
+    const n = Math.max(2, Math.round(L / 0.55));
+    for (let i = 0; i <= n; i++) {
+      const t = -L / 2 + 0.04 + (L - 0.08) * (i / n);
+      const span = (alongX ? d : w) - 0.08;
+      const half = span / 2;
+      for (const sg of [-1, 1]) {
+        const a = alongX ? [x + t, y + 0.48, z + sg * half] : [x + sg * half, y + 0.48, z + t];
+        const c = alongX ? [x + t, y + 0.48 + rh, z] : [x, y + 0.48 + rh, z + t];
+        b.tube(a, c, 0.018, 4, { kind: K.METAL, color: PAL.metalDark });
+      }
+    }
+    const r0 = alongX ? [x - L / 2 + 0.04, y + 0.48 + rh, z] : [x, y + 0.48 + rh, z - L / 2 + 0.04];
+    const r1 = alongX ? [x + L / 2 - 0.04, y + 0.48 + rh, z] : [x, y + 0.48 + rh, z + L / 2 - 0.04];
+    b.tube(r0, r1, 0.025, 4, { kind: K.METAL, color: PAL.metalDark });
+    ao(ctx, x, z, w + 0.5, d + 0.5, y, 0.8);
+  }
 }
 
 export function crate(ctx, x, y, z, s = 0.6, o = {}) {
