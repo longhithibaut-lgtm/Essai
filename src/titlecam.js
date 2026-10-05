@@ -2,21 +2,22 @@ import { Birds } from './birds.js';
 
 // Plans fixes de l'écran titre et de la page de fin, posés sur la vraie ville du parcours.
 //
-// Titre : haut au-dessus de la ville, du côté de l'ombre, on regarde le jardin du bassin
-// (pelouse, cerisiers, bassin), le palais voisin et ses toits-jardins, puis la ville qui
-// s'étage jusqu'au campanile, aux aqueducs et aux flèches noyées dans la brume, enfin la
-// mer de nuages. Le soleil bas éclaire de côté, par la gauche : les arêtes tournées vers
-// lui brillent, la gauche de l'image baigne dans sa lumière blonde (le texte s'y pose).
+// Titre : au-dessus du jardin du bassin, du côté de l'ombre. Au premier plan la pelouse,
+// les cerisiers et le bassin ; à droite la façade du palais, ses balcons et ses lierres ;
+// au loin, entre deux flèches noyées dans la brume, le campanile où mène le parcours. À
+// gauche l'aqueduc descend vers la mer de nuages et guide le regard vers le fond. Le
+// soleil bas éclaire de côté, par la gauche : les arêtes tournées vers lui brillent, la
+// gauche du ciel est blonde, et c'est là que se pose le texte.
 //
-// Fin : au-dessus du pavillon de la cloche, on se retourne vers le chemin parcouru, le
-// soleil dans le dos : toute la ville est dorée, les jardins traversés s'étagent vers
-// l'horizon.
+// Fin : sur le pavillon de la cloche, qu'on vient d'atteindre. Le campanile se dresse à
+// droite, l'aqueduc le relie à la brume, le pavillon et ses bassins sont à nos pieds ; la
+// gauche de l'image, ouverte sur la mer de nuages, reçoit les mots de la fin.
 //
 // Objectif décentré (comme une chambre d'architecte) : l'horizon descend sans incliner
 // la caméra, les façades restent droites. ui.screen('play') rend l'objectif normal.
 
-export const TITLE_SHOT = { pos: [-8, 21, -54], yaw: -0.285, pitch: -0.09, fov: 60, shift: 0.08, birds: 30, caption: 'Le jardin du bassin' };
-export const END_SHOT = { pos: [14, 16, -215], yaw: 3.0, pitch: -0.16, fov: 60, shift: 0, birds: 26, caption: 'Vu du pavillon de la cloche' };
+export const TITLE_SHOT = { pos: [-6, 18, -60], yaw: -0.2, pitch: -0.12, fov: 54, shift: 0.08, birds: 26, caption: 'Le jardin du bassin' };
+export const END_SHOT = { pos: [-7, 18, -176], yaw: -0.404, pitch: -0.16, fov: 58, shift: 0.1, birds: 16, caption: 'Le pavillon de la cloche' };
 
 export function titleCamera(game, dt) {
   const end = game.ui.dawn;

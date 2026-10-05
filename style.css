@@ -5,6 +5,7 @@
   --ink: #3b2d4f;
   --ink-deep: #2f2342;
   --ink-soft: #6c5f80;
+  --ink-mid: #4f4265;
   --ink-faint: rgba(59, 45, 79, 0.16);
   --cream: #fff7f1;
   --cream-deep: #f8e6dc;
@@ -14,6 +15,8 @@
   --glow: #ffe2b9;
   --shade: 40, 26, 58;
   --halo: 255, 244, 234;
+  /* Lueur propre à chaque ligne posée sur la scène : on lit le texte sans voiler l'image. */
+  --text-glow: 0 0 3px rgba(255, 244, 234, 1), 0 0 14px rgba(255, 244, 234, 1), 0 0 30px rgba(255, 240, 226, 0.9);
   --serif: 'Cormorant Garamond', 'Cormorant', 'Iowan Old Style', Georgia, serif;
   --sans: 'Jost', 'Futura', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
   --ease: cubic-bezier(0.22, 0.61, 0.24, 1);
@@ -460,13 +463,14 @@ h2 {
 /* ---------- Titre ---------- */
 /* Comme le menu de Mirror's Edge : la colonne de texte à gauche, côté soleil, dans la
    lumière blonde de l'aube ; la ville en gradins occupe le reste de l'image. Pas de
-   cadre ni de plaque : un halo tiède qui part du soleil, et un vignettage très doux. */
+   cadre ni de plaque : un halo tiède, léger, qui laisse voir la ville sous les mots
+   (chaque ligne porte sa propre lueur), et un vignettage très doux. */
 .screen-title {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 1fr;
   background:
-    radial-gradient(ellipse 48% 80% at 13% 50%, rgba(255, 246, 236, 0.62) 0%, rgba(255, 244, 234, 0.4) 40%, rgba(255, 242, 232, 0.12) 72%, rgba(255, 242, 232, 0) 100%),
+    radial-gradient(ellipse 40% 70% at 12% 55%, rgba(255, 246, 236, 0.3) 0%, rgba(255, 244, 234, 0.16) 45%, rgba(255, 242, 232, 0) 100%),
     radial-gradient(ellipse 90% 85% at 62% 44%, rgba(60, 44, 96, 0) 55%, rgba(60, 44, 96, 0.12) 82%, rgba(52, 38, 86, 0.26) 100%),
     linear-gradient(180deg, rgba(74, 58, 120, 0.12) 0%, rgba(74, 58, 120, 0) 26%);
 }
@@ -574,7 +578,7 @@ h2 {
   letter-spacing: 0.4em;
   text-transform: uppercase;
   color: var(--ink);
-  text-shadow: 0 0 12px rgba(255, 240, 228, 0.95), 0 0 2px rgba(255, 240, 228, 0.8);
+  text-shadow: var(--text-glow);
   animation: fade-up 2s var(--ease) 1.1s both;
 }
 
@@ -607,16 +611,12 @@ h2 {
 .screen-title .menu-item,
 .screen-end .menu-item {
   color: var(--ink);
-  text-shadow: 0 0 14px rgba(var(--halo), 1), 0 0 3px rgba(var(--halo), 0.9);
+  text-shadow: var(--text-glow);
 }
 
-.screen-title .menu-item:not(.primary) {
-  color: var(--ink-soft);
-}
-
+.screen-title .menu-item:not(.primary),
 .screen-end .menu-item:not(.primary) {
-  color: var(--ink);
-  opacity: 0.82;
+  color: var(--ink-mid);
 }
 
 .screen-title .menu-item:not(.primary):hover,
@@ -922,7 +922,7 @@ body:has(#pause:not([hidden])) .lights {
   grid-template-columns: minmax(0, 1fr);
   align-items: center;
   background:
-    radial-gradient(ellipse 52% 92% at 14% 58%, rgba(255, 246, 236, 0.72) 0%, rgba(255, 244, 234, 0.48) 42%, rgba(255, 242, 232, 0.16) 72%, rgba(255, 242, 232, 0) 100%),
+    radial-gradient(ellipse 44% 80% at 13% 56%, rgba(255, 246, 236, 0.42) 0%, rgba(255, 244, 234, 0.24) 45%, rgba(255, 242, 232, 0) 100%),
     radial-gradient(ellipse 90% 85% at 62% 44%, rgba(60, 44, 96, 0) 55%, rgba(60, 44, 96, 0.1) 82%, rgba(52, 38, 86, 0.22) 100%);
   animation-duration: 1.6s;
 }
@@ -967,7 +967,7 @@ body:not(.end-dawn) .screen-end {
   letter-spacing: 0.42em;
   text-transform: uppercase;
   color: var(--coral-deep);
-  text-shadow: 0 0 12px rgba(var(--halo), 1);
+  text-shadow: var(--text-glow);
 }
 
 .end-title {
@@ -985,7 +985,7 @@ body:not(.end-dawn) .screen-end {
   font-size: clamp(19px, 2.8vh, 28px);
   line-height: 1.4;
   color: var(--ink);
-  text-shadow: 0 0 14px rgba(var(--halo), 1), 0 0 3px rgba(var(--halo), 0.9);
+  text-shadow: var(--text-glow);
 }
 
 .end-ground {
@@ -1017,7 +1017,7 @@ body:not(.end-dawn) .screen-end {
   letter-spacing: 0.38em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  text-shadow: 0 0 10px rgba(var(--halo), 1);
+  text-shadow: var(--text-glow);
 }
 
 .end-stat dd {
@@ -1032,7 +1032,7 @@ body:not(.end-dawn) .screen-end {
   color: var(--ink);
   font-variant-numeric: lining-nums;
   font-feature-settings: 'lnum' 1;
-  text-shadow: 0 0 14px rgba(var(--halo), 1), 0 0 3px rgba(var(--halo), 0.9);
+  text-shadow: var(--text-glow);
 }
 
 .end-best {
@@ -1042,7 +1042,7 @@ body:not(.end-dawn) .screen-end {
   font-style: italic;
   font-size: clamp(16px, 2.3vh, 22px);
   color: var(--ink-soft);
-  text-shadow: 0 0 12px rgba(var(--halo), 1);
+  text-shadow: var(--text-glow);
 }
 
 .menu-end {
