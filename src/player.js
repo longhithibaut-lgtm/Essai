@@ -75,7 +75,7 @@ export const PARAMS = {
   // Caméra
   hfov: 100, // champ horizontal au repos (degrés)
   hfovRun: 5, // + à pleine course
-  hfovMax: 112,
+  hfovMax: 114,
 };
 
 const EPS = 0.001;
@@ -165,11 +165,14 @@ export class Player {
       hfov: this.p.hfov,
       pitchOffset: 0,
       shiftX: 0,
+      yawOff: 0,
       dip: 0,
       heading: 0,
       turn: 0,
       lastSpeed: 0,
       accel: 0,
+      drop: 0,
+      gapLook: 0,
     };
 
     this.body = null;
@@ -212,12 +215,15 @@ export class Player {
     this.cam.roll = 0;
     this.cam.pitchOffset = 0;
     this.cam.shiftX = 0;
+    this.cam.yawOff = 0;
     this.cam.dip = 0;
     this.cam.bobAmount = 0;
     this.cam.turn = 0;
     this.cam.heading = yaw;
     this.cam.lastSpeed = 0;
     this.cam.accel = 0;
+    this.cam.drop = 0;
+    this.cam.gapLook = 0;
     this.fallSpeed = 0;
     this.airTime = 0;
     this.bufferTimer = 0;
@@ -436,6 +442,7 @@ export class Player {
     this.coyoteTimer = 0;
     this.jumpCutDone = false;
     this.jumpAge = 0;
+    this.airTime = 0;
     this.grounded = false;
     this._setMode('air');
     // La tête accuse l'impulsion : un léger tassement, puis le regard se lève à peine.
@@ -549,7 +556,9 @@ export class Player {
     if (sp > 0.01) {
       let dx = v.x / sp, dz = v.z / sp;
       if (c.wl > 0) {
-        this._rotateToward(dx, dz, c.wx, c.wz, 1.2 * c.dt);
+        // On se laisse porter, mais la glissade suit assez le regard pour ne jamais partir
+        // de travers quand on tourne la tête en s'y jetant.
+        this._rotateToward(dx, dz, c.wx, c.wz, 2.4 * c.dt);
         dx = this._rx; dz = this._rz;
       }
       v.x = dx * ns; v.z = dz * ns;
@@ -879,7 +888,7 @@ export class Player {
       sx: this.pos.x, sy: this.pos.y, sz: this.pos.z,
       ex: this.pos.x + dx * dist, ey: top + EPS, ez: this.pos.z + dz * dist,
       t: 0, duration: dur, dx, dz, keepSpeed, vault,
-      height, top, edge,
+      height, top, edge, box: edgeBox,
       far: dx > 0 ? edgeBox.maxX : dx < 0 ? edgeBox.minX : dz > 0 ? edgeBox.maxZ : edgeBox.minZ,
       y1, pull, push, v0: Math.min(4, Math.max(0, this.vel.y)), pitch0: this.cam.pitchOffset,
       phase: pull > 0 ? 'pull' : 'push', u: 0,
@@ -1042,17 +1051,20 @@ export class Player {
     // Roulis
     let rollTarget = 0;
     let shiftTarget = 0;
+    let yawOffTarget = 0;
     let rollRate = 5;
     if (mode === 'wallrun' && this.wall) {
       // La tête se penche franchement vers le vide, loin du mur (≈ 14°), et s'en écarte :
-      // on lit tout de suite qu'on court sur la paroi.
+      // on lit tout de suite qu'on court sur la paroi. Le regard se tourne un peu vers le
+      // mur, qui défile alors sur une bonne part de l'image : on sent la vitesse.
       const e = smooth01(0, 0.2, this.modeTime);
       rollTarget = this.wall.side * 0.245 * e;
       shiftTarget = -this.wall.side * 0.04 * e;
+      yawOffTarget = -this.wall.side * 0.1 * e;
       rollRate = 11;
     } else if (mode === 'slide') {
-      rollTarget = 0.06;
-      rollRate = 6;
+      rollTarget = 0.035 * smooth01(0, 0.35, this.modeTime);
+      rollRate = 5;
     } else if (mode === 'mantle' && m) {
       if (m.vault) {
         // Appui sur la main gauche : la tête part un peu de ce côté, les jambes passent à droite.
@@ -1074,6 +1086,7 @@ export class Player {
     }
     cam.roll = damp(cam.roll, rollTarget, rollRate, dt);
     cam.shiftX = damp(cam.shiftX, shiftTarget, 6, dt);
+    cam.yawOff = damp(cam.yawOff, yawOffTarget, yawOffTarget !== 0 ? 6 : 3, dt);
 
     // Inclinaison et creux selon le mouvement
     let pitchTarget = 0;
@@ -1085,8 +1098,9 @@ export class Player {
         // Le corps plonge tout de suite vers la main posée sur le muret (regard vers elle,
         // buste ramassé), puis se relève lentement en passant par-dessus.
         const t = Math.min(1, m.t / m.duration);
-        const e = t < 0.27 ? Math.sin((t / 0.27) * Math.PI * 0.5) : 1 - smooth01(0.27, 1, t);
-        pitchTarget = -e * 0.4;
+        // Le regard est déjà baissé vers l'arête en arrivant (voir plus bas) : il continue.
+        const e = t < 0.27 ? 0.55 + 0.45 * Math.sin((t / 0.27) * Math.PI * 0.5) : 1 - smooth01(0.27, 1, t);
+        pitchTarget = -e * 0.42;
         dipTarget = -e * (0.22 + 0.1 * Math.min(1, m.height / p.vaultHeight));
         pitchRate = 18;
         dipRate = 18;
@@ -1103,24 +1117,42 @@ export class Player {
         pitchRate = 14;
       }
     } else if (mode === 'climb') {
-      // On lève les yeux vers le haut du mur, là où les mains vont.
-      pitchTarget = 0.26 * smooth01(0, 0.12, this.modeTime);
+      // On lève les yeux vers le haut du mur, là où les mains vont ; près du rebord, le regard
+      // bascule franchement vers l'arête qu'on va saisir.
+      const toTop = this.wall ? this.wall.box.maxY - (this.pos.y + p.eye) : 3;
+      pitchTarget = (0.26 + 0.26 * smooth01(1.3, 0.55, toTop)) * smooth01(0, 0.12, this.modeTime);
       pitchRate = 14;
     } else if (mode === 'slide') {
       // Regard plus bas pour voir ses jambes filer devant, qui se relève doucement.
       pitchTarget = -0.3 + 0.1 * smooth01(0, 0.9, this.modeTime);
       pitchRate = 7;
     } else if (mode === 'air') {
-      // En retombant de haut, on regarde légèrement vers le point d'arrivée.
-      pitchTarget = THREE.MathUtils.clamp(this.vel.y * 0.008, -0.07, 0.025);
-      pitchRate = 4;
+      // En l'air, le regard glisse vers l'endroit où l'on va se poser : à peine sur un petit
+      // saut, franchement au-dessus d'un vide (on mesure la hauteur du sol un peu devant soi).
+      // On sent ainsi la hauteur et le poids du saut, sans jamais quitter des yeux l'arrivée.
+      const g = this.physics.groundBelow(this.pos.x + this.vel.x * 0.3, this.pos.y + 0.05, this.pos.z + this.vel.z * 0.3, 0.1);
+      const drop = g > -Infinity ? this.pos.y - g : 6;
+      cam.drop = damp(cam.drop, drop, 6, dt);
+      const dropK = smooth01(0.4, 3.5, cam.drop);
+      const descend = smooth01(1.5, -4.5, this.vel.y);
+      const ease = smooth01(0, 0.22, this.airTime);
+      pitchTarget = -ease * (0.05 + 0.1 * dropK + 0.09 * descend * (0.35 + 0.65 * dropK));
+      pitchRate = 3.6;
     } else if (onFoot) {
       // En pleine course, le buste se penche à peine vers l'avant. Devant un muret, on se
       // ramasse déjà un peu et le regard descend vers l'endroit où la main va se poser.
       const va = this.body ? this.body.vaultAhead : 0;
-      pitchTarget = -0.02 * k - 0.1 * va + THREE.MathUtils.clamp(-cam.accel * 0.004, -0.022, 0.018);
-      dipTarget = -0.06 * va;
-      pitchRate = 3 + 6 * va;
+      // Un vide s'ouvre juste devant (bord d'un toit) : le regard s'y pose un peu, on mesure
+      // l'écart avant de sauter.
+      let gap = 0;
+      if (speed > 3) {
+        const ax = this.pos.x + this.vel.x * 0.26, az = this.pos.z + this.vel.z * 0.26;
+        if (this.physics.groundBelow(ax, this.pos.y + 0.05, az, 0.1) < this.pos.y - 0.9) gap = 1;
+      }
+      cam.gapLook = damp(cam.gapLook, gap, 5, dt);
+      pitchTarget = -0.02 * k - 0.32 * va - 0.09 * cam.gapLook + THREE.MathUtils.clamp(-cam.accel * 0.004, -0.022, 0.018);
+      dipTarget = -0.08 * va;
+      pitchRate = 3 + 11 * va;
     }
     cam.pitchOffset = damp(cam.pitchOffset, pitchTarget, pitchRate, dt);
     cam.dip = damp(cam.dip, dipTarget, dipRate, dt);
@@ -1129,7 +1161,7 @@ export class Player {
     // un peu avec la vitesse, sans jamais devenir un fish-eye.
     let hfovTarget = p.hfov + p.hfovRun * THREE.MathUtils.clamp((speed - 2) / (p.runSpeed - 2), 0, 1) + Math.max(0, speed - p.runSpeed) * 1.2;
     if (mode === 'slide') hfovTarget += 3;
-    if (mode === 'wallrun') hfovTarget += 3;
+    if (mode === 'wallrun') hfovTarget += 4 + 3 * (1 - smooth01(0.15, 0.9, this.modeTime));
     if (mode === 'mantle' && m && !m.vault) hfovTarget -= 3; // on se concentre sur le rebord
     hfovTarget = Math.min(hfovTarget, p.hfovMax);
     cam.hfov = damp(cam.hfov, hfovTarget, 3, dt);
@@ -1149,7 +1181,7 @@ export class Player {
     const camera = this.camera;
     camera.position.set(x + rx * sx, y + cam.eye + bobY + cam.landOffset + cam.dip + stepY, z + rz * sx);
     camera.rotation.order = 'YXZ';
-    camera.rotation.set(this.pitch + cam.pitchOffset + cam.nod + bobPitch, this.yaw, cam.roll + bobRoll);
+    camera.rotation.set(this.pitch + cam.pitchOffset + cam.nod + bobPitch, this.yaw + cam.yawOff, cam.roll + bobRoll);
     if (Math.abs(camera.fov - cam.fov) > 0.01) {
       camera.fov = cam.fov;
       camera.updateProjectionMatrix();
