@@ -1,0 +1,641 @@
+import * as THREE from 'three';
+import * as WORLD from '../world.js';
+
+const SKY = WORLD.SKY;
+
+// Matériaux du décor : un seul matériau « architecture » pour presque tout ce qui
+// est opaque (la couleur vient des sommets, le motif est calculé dans le shader
+// selon le type de surface), plus le feuillage, les tissus et l'eau.
+// Peu de matériaux = peu d'appels de dessin.
+
+// Types de surface (attribut aKind)
+export const K = {
+  PLAIN: 0,
+  PAVE: 1, // dalles sur le dessus, enduit sur les côtés
+  FACADE: 2, // fenêtres sur les côtés, étanchéité sur le toit
+  PLASTER: 3, // enduit doux
+  WOOD: 4, // lames de bois
+  CORAL: 5, // accent corail (vision du coureur)
+  METAL: 6, // métal peint
+  VENT: 7, // ventilation à lames
+  GLASS: 8, // verre qui reflète le ciel
+  SOIL: 9, // terre des jardinières
+  GLOW: 10, // lumière chaude
+  STONE: 11, // pierre de taille
+  TERRA: 12, // terre cuite
+  GRILLE: 13, // caillebotis / grille sombre
+  ROOF: 14, // tuiles canal
+};
+
+const COMMON_GLSL = /* glsl */ `
+  float aHash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+  float aNoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(aHash(i), aHash(i + vec2(1.0, 0.0)), u.x), mix(aHash(i + vec2(0.0, 1.0)), aHash(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+  // Distance (en mètres) à la ligne de grille la plus proche, sur un axe.
+  float aGridDist(float x, float cell) { return abs(fract(x / cell + 0.5) - 0.5) * cell; }
+  // Ligne anticrénelée : 1 sur la ligne, 0 ailleurs, s'efface quand elle devient plus fine qu'un pixel.
+  float aLine(float d, float w, float fw) {
+    float l = 1.0 - smoothstep(w - fw * 0.5, w + fw * 0.75, d);
+    return l * (1.0 - smoothstep(w * 2.0, w * 7.0, fw));
+  }
+  // Rectangle anticrénelé
+  float aRect(vec2 p, vec2 mn, vec2 mx, vec2 fw) {
+    vec2 a = smoothstep(mn - fw * 0.5, mn + fw * 0.5, p);
+    vec2 b = 1.0 - smoothstep(mx - fw * 0.5, mx + fw * 0.5, p);
+    return a.x * a.y * b.x * b.y;
+  }
+  vec3 aSky(vec3 r) {
+    float h = r.y;
+    vec3 c = mix(uSkyHorizon, uSkyUpper, smoothstep(0.0, 0.25, h));
+    c = mix(c, uSkyZenith, smoothstep(0.2, 0.75, h));
+    c = mix(c, uSkyLow, smoothstep(0.0, -0.25, h));
+    float s = max(dot(r, uSunDir), 0.0);
+    c += uSunCol * (pow(s, 8.0) * 0.5 + pow(s, 200.0) * 3.0);
+    return c;
+  }
+`;
+
+// Texture de bruit précalculée (répétable) : R grandes taches, G moyennes, B fines,
+// A bruit blanc. Une lecture de texture remplace une vingtaine de hachages par pixel.
+let noiseTex = null;
+export function getNoiseTexture() {
+  if (noiseTex) return noiseTex;
+  const S = 256;
+  const data = new Uint8Array(S * S * 4);
+  let seed = 12345;
+  const r = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const lattices = [4, 16, 64].map((c) => {
+    const v = new Float32Array(c * c);
+    for (let i = 0; i < v.length; i++) v[i] = r();
+    return { c, v };
+  });
+  const smooth = (t) => t * t * (3 - 2 * t);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const o = (y * S + x) * 4;
+      lattices.forEach(({ c, v }, ch) => {
+        const fx = (x / S) * c, fy = (y / S) * c;
+        const ix = Math.floor(fx), iy = Math.floor(fy);
+        const tx = smooth(fx - ix), ty = smooth(fy - iy);
+        const a = v[(iy % c) * c + (ix % c)], b = v[(iy % c) * c + ((ix + 1) % c)];
+        const cc = v[((iy + 1) % c) * c + (ix % c)], d = v[((iy + 1) % c) * c + ((ix + 1) % c)];
+        const val = (a + (b - a) * tx) * (1 - ty) + (cc + (d - cc) * tx) * ty;
+        data[o + ch] = Math.round(val * 255);
+      });
+      data[o + 3] = Math.floor(r() * 256);
+    }
+  }
+  noiseTex = new THREE.DataTexture(data, S, S, THREE.RGBAFormat, THREE.UnsignedByteType);
+  noiseTex.wrapS = noiseTex.wrapT = THREE.RepeatWrapping;
+  noiseTex.magFilter = THREE.LinearFilter;
+  noiseTex.minFilter = THREE.LinearMipmapLinearFilter;
+  noiseTex.generateMipmaps = true;
+  noiseTex.needsUpdate = true;
+  return noiseTex;
+}
+
+// Couleurs du ciel partagées avec world.js (avec des valeurs de repli si elles changent).
+const sky = (key, fallback) => (SKY && SKY[key]) || fallback;
+
+function skyUniforms() {
+  return {
+    uSkyZenith: { value: sky('zenith', new THREE.Color(0x8ea5d8)) },
+    uSkyUpper: { value: sky('upper', new THREE.Color(0xc7b6e0)) },
+    uSkyHorizon: { value: sky('horizon', new THREE.Color(0xffd6bd)) },
+    uSkyLow: { value: new THREE.Color(0xf4e6e4) },
+    uSunCol: { value: sky('sun', new THREE.Color(0xfff1da)) },
+    uSunDir: { value: sky('sunDir', new THREE.Vector3(-0.85, 0.32, -0.42).normalize()) },
+    uTime: { value: 0 },
+    uNoise: { value: getNoiseTexture() },
+  };
+}
+
+const SKY_DECL = /* glsl */ `
+  uniform vec3 uSkyZenith, uSkyUpper, uSkyHorizon, uSkyLow, uSunCol, uSunDir;
+  uniform float uTime;
+  uniform sampler2D uNoise;
+`;
+
+// ---------------------------------------------------------------------------
+// Architecture
+// ---------------------------------------------------------------------------
+
+const ARCH_VERT_HEAD = /* glsl */ `
+  attribute float aKind;
+  attribute vec3 aFace;
+  flat varying float vKind;
+  flat varying vec3 vFace;
+  varying vec2 vLUv;
+  varying vec3 vWPos;
+  varying vec3 vWNrm;
+`;
+
+const ARCH_VERT_MAIN = /* glsl */ `
+  vKind = aKind;
+  vFace = aFace;
+  vLUv = uv;
+  vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  vWNrm = normalize(mat3(modelMatrix) * objectNormal);
+`;
+
+const ARCH_FRAG_HEAD = /* glsl */ `
+  flat varying float vKind;
+  flat varying vec3 vFace;
+  varying vec2 vLUv;
+  varying vec3 vWPos;
+  varying vec3 vWNrm;
+  ${SKY_DECL}
+  ${COMMON_GLSL}
+
+  // Fenêtres d'une façade : modifie couleur, rugosité et émission.
+  void aWindows(inout vec3 col, inout float rough, inout vec3 emit, vec3 n, vec3 V, vec2 fw) {
+    float W = vFace.x, H = vFace.y, st = vFace.z;
+    vec2 uv = vLUv;
+    // 0 : fenêtres percées, 1 : bandeaux vitrés, 2 : portes-fenêtres, 3 : mur rideau (tours)
+    float style = st >= 0.97 ? 3.0 : floor(fract(st * 7.31) * 3.0);
+    bool shut = (style == 0.0 || style == 2.0) && fract(st * 13.7) > 0.45;
+    float band = 1.1 + 0.5 * fract(st * 3.7);
+    float floorH = 3.1 + 0.5 * fract(st * 5.3);
+    float bayW = style == 3.0 ? 1.5 : (style == 1.0 ? 1.6 + 0.4 * fract(st * 2.9) : 2.3 + 0.9 * fract(st * 9.1));
+    float nb = max(1.0, floor(W / bayW + 0.5));
+    float bw = W / nb;
+    float vv = uv.y - band;
+    // Bandeau haut : enduit avec un joint
+    float joint = aLine(abs(vv), 0.03, fw.y);
+    col *= 1.0 - 0.10 * joint;
+    if (vv < 0.0 || uv.y > H - 0.5) return;
+    float flId = floor(vv / floorH);
+    float fy = vv - flId * floorH;
+    float bayId = floor(uv.x / bw);
+    float fx = uv.x - bayId * bw;
+    // Dalle de plancher
+    float slab = aLine(fy, 0.02, fw.y);
+    col *= 1.0 - 0.07 * slab;
+    // Fenêtre
+    vec2 mn, mx;
+    if (style == 0.0) { mn = shut ? vec2(bw * 0.3, 0.55) : vec2(0.42, 0.55); mx = shut ? vec2(bw * 0.7, floorH - 0.95) : vec2(bw - 0.42, floorH - 0.95); }
+    else if (style == 1.0) { mn = vec2(0.06, 0.7); mx = vec2(bw - 0.06, floorH - 0.85); }
+    else if (style == 2.0) { mn = vec2(bw * 0.28, 0.35); mx = vec2(bw * 0.72, floorH - 0.3); }
+    else { mn = vec2(0.0); mx = vec2(bw, floorH); }
+    vec2 p = vec2(fx, fy);
+    float far = smoothstep(0.06, 0.22, max(fw.x, fw.y));
+    float win = aRect(p, mn, mx, fw);
+    float id0 = aHash(vec2(bayId + st * 31.0, flId + st * 17.0));
+    // Volets peints de part et d'autre (couleurs douces), parfois fermés
+    if (shut) {
+      float swd = (mx.x - mn.x) * 0.5;
+      float sh = aRect(p, vec2(mn.x - swd, mn.y), vec2(mn.x - 0.03, mx.y), fw) + aRect(p, vec2(mx.x + 0.03, mn.y), vec2(mx.x + swd, mx.y), fw);
+      float closed = step(0.88, id0) * win;
+      float pal = fract(st * 23.1);
+      vec3 shc = pal < 0.2 ? vec3(0.47, 0.57, 0.47) : pal < 0.4 ? vec3(0.45, 0.53, 0.63) : pal < 0.6 ? vec3(0.42, 0.58, 0.58) : pal < 0.8 ? vec3(0.72, 0.5, 0.42) : vec3(0.62, 0.6, 0.7);
+      float lou = aLine(aGridDist(p.y, 0.07), 0.012, fw.y) * (1.0 - far);
+      shc *= 1.0 - 0.25 * lou;
+      float m = clamp(sh + closed, 0.0, 1.0);
+      col = mix(col, shc, m);
+      rough = mix(rough, 0.7, m);
+      win *= 1.0 - closed;
+    }
+    // Appui de fenêtre et son ombre
+    float sill = aRect(p, vec2(mn.x - 0.08, mx.y), vec2(mx.x + 0.08, mx.y + 0.07), fw);
+    float sillShadow = aRect(p, vec2(mn.x - 0.08, mx.y + 0.07), vec2(mx.x + 0.08, mx.y + 0.16), fw);
+    col *= 1.0 + 0.06 * sill - 0.12 * sillShadow * (1.0 - far);
+    if (win <= 0.0) {
+      // Loin : on mélange vers la teinte moyenne pour éviter le moiré.
+      col = mix(col, col * 0.86, far * 0.5);
+      return;
+    }
+    float id = id0;
+    // Cadre et meneau
+    vec2 q = p - mn;
+    vec2 sz = mx - mn;
+    float frameD = min(min(q.x, sz.x - q.x), min(q.y, sz.y - q.y));
+    float frame = 1.0 - smoothstep(0.05 - fw.x, 0.05 + fw.x, frameD);
+    float mull = style == 3.0 ? 0.0 : style == 1.0 ? aLine(aGridDist(q.x, max(0.8, sz.x / floor(sz.x / 1.0 + 0.5))), 0.025, fw.x) : aLine(abs(q.x - sz.x * 0.5), 0.025, fw.x);
+    float tran = aLine(abs(q.y - sz.y * 0.32), 0.02, fw.y) * step(1.0, style);
+    frame = max(frame, max(mull, tran) * (1.0 - far));
+    // Verre : reflet du ciel
+    vec3 R = reflect(V, n);
+    // Légère déformation par vitre, ciel un peu au-dessus de l'horizon
+    R.y = abs(R.y) * 0.8 + 0.1 + 0.05 * (id - 0.5);
+    R = normalize(R);
+    float fres = 0.12 + 0.88 * pow(1.0 - max(dot(-V, n), 0.0), 4.0);
+    vec3 glass = vec3(0.1, 0.12, 0.17) * (0.8 + 0.4 * id);
+    vec3 refl = aSky(R);
+    // Reflet d'une ligne de toits lointaine
+    float az = atan(R.x, R.z);
+    vec4 sn = textureLod(uNoise, vec2(az * 0.6, 0.31), 0.0);
+    float sky = smoothstep(0.0, 0.02, R.y - 0.12 - 0.07 * sn.r - 0.05 * step(0.62, sn.b));
+    refl = mix(refl * vec3(0.62, 0.6, 0.66), refl, sky);
+    vec3 glassEmit = refl * (0.22 + 0.55 * fres) * (0.85 + 0.3 * id);
+    // Profondeur : ombre portée par le linteau
+    float recess = 1.0 - smoothstep(0.0, 0.32, q.y);
+    glass *= 1.0 - 0.5 * recess;
+    glassEmit *= 1.0 - 0.55 * recess;
+    // Rideaux clairs et fenêtres allumées (doucement)
+    float spandrel = style == 3.0 ? step(floorH - 0.95, q.y) : 0.0;
+    glass = mix(glass, vec3(0.32, 0.34, 0.4), spandrel);
+    glassEmit *= 1.0 - 0.35 * spandrel;
+    float curtain = step(style == 3.0 ? 2.0 : 0.62, id) * smoothstep(0.0, 0.02, sz.x * (0.25 + 0.3 * fract(id * 13.0)) - abs(q.x - (fract(id * 7.0) > 0.5 ? 0.0 : sz.x)));
+    vec3 inside = mix(glass, vec3(0.82, 0.72, 0.64), curtain * 0.85);
+    vec3 insideEmit = mix(glassEmit, vec3(1.0, 0.72, 0.48) * 0.16, curtain * 0.7);
+    if (id > 0.9) insideEmit += vec3(1.0, 0.7, 0.45) * 0.22;
+    vec3 frameCol = mix(vec3(0.93, 0.91, 0.88), vec3(0.42, 0.40, 0.42), step(0.5, fract(st * 4.3)));
+    vec3 wc = mix(inside, frameCol, frame);
+    vec3 we = insideEmit * (1.0 - frame);
+    // Au loin, le verre devient une teinte moyenne pour rester calme.
+    wc = mix(wc, mix(col * 0.55, glass, 0.4), far * 0.6);
+    col = mix(col, wc, win);
+    emit += we * win;
+    rough = mix(rough, mix(0.12, 0.6, frame), win);
+  }
+
+  void aPattern(inout vec3 col, inout float rough, inout float metal, inout vec3 emit) {
+    float kind = floor(vKind + 0.5);
+    vec3 n = normalize(vWNrm);
+    vec3 V = normalize(vWPos - cameraPosition);
+    float isTop = step(0.6, n.y);
+    float isSide = 1.0 - step(0.6, abs(n.y));
+    vec2 uv = vLUv;
+    // Toutes les dérivées sont calculées ici, hors de tout branchement.
+    vec2 fw = max(fwidth(uv), vec2(1e-4));
+    vec2 fwp = max(fwidth(vWPos.xz), vec2(1e-4));
+    float W = vFace.x, H = vFace.y;
+    // Arêtes légèrement éclaircies : faux chanfrein qui accroche la lumière
+    float ed = min(min(uv.x, W - uv.x), min(uv.y, H - uv.y));
+    float edge = 1.0 - smoothstep(0.0, 0.035 + fw.x, ed);
+    // Grain général très doux
+    vec2 wp = isTop > 0.5 ? vWPos.xz : vec2(vWPos.x + vWPos.z, vWPos.y);
+    vec4 nz = texture2D(uNoise, wp * 0.045);
+    float big = nz.r * 0.5 + texture2D(uNoise, wp.yx * 0.0163 + 0.37).r * 0.3 + nz.g * 0.2;
+    float fine = nz.b;
+    // Les grandes façades s'assombrissent doucement vers le bas (profondeur, brume).
+    col *= mix(1.0, mix(0.74, 1.0, exp(-uv.y * 0.025)), isSide);
+
+    if (kind == 1.0) { // dalles / enduit
+      if (isTop > 0.5) {
+        // Taille des dalles selon le style (petits carreaux de terre cuite -> grandes dalles)
+        float ts = mix(0.4, 1.3, vFace.z);
+        vec2 pp = vWPos.xz;
+        // rangs décalés pour les grandes dalles
+        pp.x += step(0.75, vFace.z) * step(0.5, fract(pp.y / ts * 0.5)) * ts * 0.5;
+        vec2 tid = floor(pp / ts);
+        float h = aHash(tid);
+        float g = max(aLine(aGridDist(pp.x, ts), 0.011, fwp.x), aLine(aGridDist(pp.y, ts), 0.011, fwp.y));
+        col *= (0.96 + 0.07 * h) * (0.95 + 0.07 * big) * (0.985 + 0.03 * fine);
+        col *= 1.0 - 0.15 * g;
+        rough = 0.78 + 0.12 * h;
+      } else {
+        float j = aLine(aGridDist(uv.y, 1.25), 0.01, fw.y) * isSide;
+        col *= (0.95 + 0.07 * big) * (1.0 - 0.07 * j);
+        rough = 0.88;
+      }
+      col *= 1.0 + 0.07 * edge;
+    } else if (kind == 2.0) { // façade
+      if (isSide > 0.5) {
+        col *= 0.95 + 0.08 * big;
+        aWindows(col, rough, emit, n, V, fw);
+      } else if (isTop > 0.5) {
+        float s = max(aLine(aGridDist(vWPos.x, 1.8), 0.02, fwp.x), aLine(aGridDist(vWPos.z, 3.6), 0.02, fwp.y));
+        col *= (0.9 + 0.08 * big) * (0.96 + 0.06 * fine) * (1.0 - 0.1 * s);
+        rough = 0.95;
+      }
+      col *= 1.0 + 0.05 * edge;
+    } else if (kind == 3.0) { // enduit
+      col *= (0.955 + 0.06 * big) * (0.99 + 0.02 * fine);
+      col *= 1.0 + 0.08 * edge;
+      rough = 0.86;
+    } else if (kind == 4.0) { // bois
+      bool alongU = isSide > 0.5 ? true : W >= H;
+      float across = alongU ? uv.y : uv.x;
+      float along = alongU ? uv.x : uv.y;
+      float pid = floor(across / 0.16);
+      float ph = aHash(vec2(pid, 3.0));
+      float gap = aLine(aGridDist(across, 0.16), 0.006, alongU ? fw.y : fw.x);
+      float grain = textureLod(uNoise, vec2(along * 0.1 + ph, across * 0.6), 1.0).b;
+      col *= (0.9 + 0.16 * ph) * (0.9 + 0.14 * grain) * (1.0 - 0.35 * gap);
+      col *= 1.0 + 0.06 * edge;
+      rough = 0.7;
+    } else if (kind == 5.0) { // corail
+      col *= (0.95 + 0.06 * big);
+      if (isSide > 0.5 && W > 1.5) {
+        // Panneaux peints : joints réguliers, utiles aussi pour sentir la vitesse en course murale
+        float pid = aHash(vec2(floor(uv.x / 1.2), floor(uv.y / 2.4)) + 3.7);
+        float jn = max(aLine(aGridDist(uv.x, 1.2), 0.008, fw.x), aLine(aGridDist(uv.y, 2.4), 0.008, fw.y));
+        col *= (0.97 + 0.05 * pid) * (1.0 - 0.18 * jn);
+      }
+      col *= 1.0 + 0.1 * edge;
+      emit += col * 0.14;
+      rough = 0.62;
+    } else if (kind == 6.0) { // métal
+      col *= 0.96 + 0.05 * textureLod(uNoise, wp * vec2(0.03, 0.5), 1.0).b;
+      col *= 1.0 + 0.12 * edge;
+      rough = 0.42;
+      metal = 0.15;
+    } else if (kind == 7.0) { // ventilation
+      if (isSide > 0.5) {
+        float l = aLine(aGridDist(uv.y, 0.08), 0.012, fw.y) * step(0.12, uv.y) * step(0.12, H - uv.y) * step(0.1, uv.x) * step(0.1, W - uv.x);
+        col *= 1.0 - 0.3 * l;
+      } else if (isTop > 0.5) {
+        vec2 c = uv - vec2(W, H) * 0.5;
+        float r = length(c);
+        float rr = min(W, H) * 0.42;
+        float disc = 1.0 - smoothstep(rr - fw.x, rr + fw.x, r);
+        float ring = aLine(aGridDist(r, 0.06), 0.01, fw.x);
+        col *= 1.0 - disc * (0.45 + 0.25 * ring);
+      }
+      col *= 1.0 + 0.1 * edge;
+      rough = 0.5;
+    } else if (kind == 8.0) { // verre
+      vec3 R = reflect(V, n);
+      R.y = abs(R.y);
+      float fres = 0.2 + 0.8 * pow(1.0 - max(dot(-V, n), 0.0), 4.0);
+      col = col * 0.25;
+      emit += aSky(normalize(R)) * (0.25 + 0.55 * fres);
+      rough = 0.1;
+    } else if (kind == 9.0) { // terre
+      float m = textureLod(uNoise, vWPos.xz * 0.1, 0.0).b;
+      col = mix(vec3(0.33, 0.25, 0.2), vec3(0.42, 0.5, 0.3), smoothstep(0.55, 0.8, m)) * (0.8 + 0.3 * fine);
+      rough = 1.0;
+    } else if (kind == 10.0) { // lumière
+      emit += col * 1.6;
+    } else if (kind == 11.0) { // pierre de taille
+      float bh = 0.62;
+      float row = floor(uv.y / bh);
+      float off = mod(row, 2.0) * 0.6;
+      float bx = isTop > 0.5 ? vWPos.x : uv.x;
+      float by = isTop > 0.5 ? vWPos.z : uv.y;
+      float j1 = aLine(aGridDist(by, bh), 0.01, fw.y);
+      float j2 = aLine(aGridDist(bx + (isTop > 0.5 ? 0.0 : off), 1.2), 0.01, fw.x);
+      float bid = aHash(vec2(floor((bx + off) / 1.2), floor(by / bh)));
+      col *= (0.93 + 0.08 * bid) * (0.94 + 0.08 * big) * (1.0 - 0.18 * max(j1, j2));
+      col *= 1.0 + 0.07 * edge;
+      rough = 0.9;
+    } else if (kind == 12.0) { // terre cuite
+      col *= (0.92 + 0.1 * big) * (0.95 + 0.08 * fine);
+      col *= 1.0 + 0.08 * edge;
+      rough = 0.85;
+    } else if (kind == 14.0) { // tuiles
+      float row = floor(uv.y / 0.26);
+      float off = mod(row, 2.0) * 0.11;
+      float tu = fract((uv.x + off) / 0.22);
+      float tv = fract(uv.y / 0.26);
+      float roundT = sqrt(max(0.0, 1.0 - pow(abs(tu - 0.5) * 2.0, 2.0)));
+      float th = aHash(vec2(floor((uv.x + off) / 0.22), row));
+      float fade = 1.0 - smoothstep(0.04, 0.12, fw.y);
+      col *= mix(1.0, (0.78 + 0.26 * roundT) * (1.0 - 0.25 * smoothstep(0.75, 1.0, tv)) * (0.92 + 0.14 * th), fade);
+      col *= 0.95 + 0.08 * big;
+      rough = 0.8;
+    } else if (kind == 13.0) { // grille
+      float g = max(aLine(aGridDist(uv.x, 0.05), 0.01, fw.x), aLine(aGridDist(uv.y, 0.05), 0.01, fw.y));
+      col *= 0.65 + 0.35 * (1.0 - g);
+      rough = 0.5;
+    } else {
+      col *= (0.97 + 0.04 * big);
+      col *= 1.0 + 0.06 * edge;
+    }
+  }
+`;
+
+export function createArchMaterial({ shadows = true } = {}) {
+  const uniforms = skyUniforms();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.85, metalness: 0 });
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\n' + ARCH_VERT_HEAD)
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\n' + ARCH_VERT_MAIN);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\n' + ARCH_FRAG_HEAD)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float pRough = roughness; float pMetal = metalness; vec3 pEmit = vec3(0.0);
+        aPattern(diffuseColor.rgb, pRough, pMetal, pEmit);`)
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = pRough;')
+      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = pMetal;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance += pEmit;');
+  };
+  mat.customProgramCacheKey = () => 'aube-arch-v1';
+  mat.userData.uniforms = uniforms;
+  mat.userData.shadows = shadows;
+  return mat;
+}
+
+// ---------------------------------------------------------------------------
+// Feuillage : boules adoucies + cartes de feuilles (alpha testé), vent léger,
+// lumière qui traverse les feuilles à contre-jour.
+// ---------------------------------------------------------------------------
+
+// Atlas 512 x 512 en niveaux de gris (teinté par la couleur des sommets) :
+// haut gauche plein, haut droite grappe de feuilles, bas gauche brins d'herbe,
+// bas droite grappe de petites fleurs (cerisiers).
+export const ATLAS = {
+  solid: [0.25, 0.75],
+  leaves: [0.5, 0.5, 1, 1],
+  grass: [0, 0, 0.5, 0.5],
+  blossom: [0.5, 0, 1, 0.5],
+};
+
+function makeLeafTexture() {
+  const S = 512, H = S / 2;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  let seed = 7;
+  const r = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, H, H);
+  // Feuilles : ellipses pointues avec nervure, plus claires au centre de la grappe
+  const leaf = (x, y, len, wid, ang, v) => {
+    g.save();
+    g.translate(x, y);
+    g.rotate(ang);
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.beginPath();
+    g.moveTo(0, -len);
+    g.quadraticCurveTo(wid, -len * 0.2, 0, len);
+    g.quadraticCurveTo(-wid, -len * 0.2, 0, -len);
+    g.fill();
+    g.strokeStyle = `rgba(${v - 40},${v - 40},${v - 40},0.6)`;
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(0, -len * 0.85);
+    g.lineTo(0, len * 0.85);
+    g.stroke();
+    g.restore();
+  };
+  for (let i = 0; i < 220; i++) {
+    const a = r() * Math.PI * 2;
+    const d = Math.pow(r(), 0.6) * H * 0.4;
+    const x = H * 1.5 + Math.cos(a) * d, y = H * 0.5 + Math.sin(a) * d;
+    const v = Math.floor(165 + 90 * (1 - d / (H * 0.4)) * (0.6 + 0.4 * r()));
+    leaf(x, y, 9 + r() * 7, 6 + r() * 4, a + Math.PI / 2 + (r() - 0.5) * 1.2, v);
+  }
+  // Herbe : brins effilés qui partent du bas
+  for (let i = 0; i < 110; i++) {
+    const x0 = 20 + r() * (H - 40), y0 = S - 4;
+    const h = 60 + r() * 150, lean = (r() - 0.5) * 70, w = 3 + r() * 4;
+    const v = Math.floor(170 + r() * 85);
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.beginPath();
+    g.moveTo(x0 - w, y0);
+    g.quadraticCurveTo(x0 + lean * 0.3, y0 - h * 0.6, x0 + lean, y0 - h);
+    g.quadraticCurveTo(x0 + lean * 0.3 + w * 0.5, y0 - h * 0.6, x0 + w, y0);
+    g.fill();
+  }
+  // Fleurs de cerisier : cinq pétales autour d'un cœur
+  for (let i = 0; i < 70; i++) {
+    const a = r() * Math.PI * 2;
+    const d = Math.pow(r(), 0.6) * H * 0.4;
+    const x = H * 1.5 + Math.cos(a) * d, y = H * 1.5 + Math.sin(a) * d;
+    const rad = 8 + r() * 6;
+    const v = Math.floor(205 + 50 * r());
+    const rot = r() * Math.PI;
+    for (let k = 0; k < 5; k++) {
+      const pa = rot + (k / 5) * Math.PI * 2;
+      g.fillStyle = `rgb(${v},${v},${v})`;
+      g.beginPath();
+      g.ellipse(x + Math.cos(pa) * rad * 0.55, y + Math.sin(pa) * rad * 0.55, rad * 0.55, rad * 0.38, pa, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.fillStyle = `rgb(${v - 60},${v - 70},${v - 70})`;
+    g.beginPath();
+    g.arc(x, y, rad * 0.2, 0, Math.PI * 2);
+    g.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+export function createFoliageMaterial() {
+  const uniforms = skyUniforms();
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, vertexColors: true, roughness: 0.85, metalness: 0,
+    map: makeLeafTexture(), alphaTest: 0.45, side: THREE.DoubleSide,
+  });
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        attribute float aSway;
+        varying vec3 vWPosF;
+        uniform float uTime;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          vec3 wp0 = (modelMatrix * vec4(position, 1.0)).xyz;
+          float ph = wp0.x * 0.35 + wp0.z * 0.27;
+          transformed.x += sin(uTime * 1.1 + ph) * 0.05 * aSway + sin(uTime * 2.7 + ph * 3.0) * 0.015 * aSway;
+          transformed.z += cos(uTime * 0.9 + ph * 1.3) * 0.04 * aSway;
+          transformed.y += sin(uTime * 1.7 + ph * 2.0) * 0.015 * aSway;
+        }`)
+      .replace('#include <fog_vertex>', `#include <fog_vertex>
+        vWPosF = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vWPosF;
+        uniform vec3 uSunDir, uSunCol;
+        float fHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }`)
+      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+        normal = normalize(vNormal); // même normale des deux côtés des feuilles`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          float n = fHash(floor(vWPosF * 7.0));
+          diffuseColor.rgb *= 0.88 + 0.22 * n;
+        }`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        {
+          // Contre-jour : le soleil traverse les feuilles
+          vec3 V = normalize(vWPosF - cameraPosition);
+          float back = pow(max(dot(V, uSunDir), 0.0), 3.0);
+          totalEmissiveRadiance += diffuseColor.rgb * uSunCol * (0.06 + back * 0.45);
+        }`);
+  };
+  mat.customProgramCacheKey = () => 'aube-foliage-v1';
+  mat.userData.uniforms = uniforms;
+  return mat;
+}
+
+// ---------------------------------------------------------------------------
+// Tissus : voiles d'ombrage, bannières, linge. Ondulent au vent, s'illuminent à contre-jour.
+// ---------------------------------------------------------------------------
+
+export function createFabricMaterial() {
+  const uniforms = skyUniforms();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        attribute float aSway;
+        varying vec3 vWPosF;
+        uniform float uTime;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          vec3 wp0 = (modelMatrix * vec4(position, 1.0)).xyz;
+          float ph = wp0.x * 0.6 + wp0.z * 0.45 + wp0.y * 0.8;
+          float w = sin(uTime * 1.6 + ph) * 0.6 + sin(uTime * 2.9 + ph * 1.7) * 0.4;
+          transformed += normal * w * 0.09 * aSway;
+          transformed.x += sin(uTime * 0.8 + ph * 0.5) * 0.05 * aSway;
+        }`)
+      .replace('#include <fog_vertex>', `#include <fog_vertex>
+        vWPosF = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vWPosF;
+        uniform vec3 uSunDir, uSunCol;`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        {
+          vec3 V = normalize(vWPosF - cameraPosition);
+          float back = pow(max(dot(V, uSunDir), 0.0), 2.0);
+          totalEmissiveRadiance += diffuseColor.rgb * uSunCol * (0.05 + back * 0.35);
+        }`);
+  };
+  mat.customProgramCacheKey = () => 'aube-fabric-v1';
+  mat.userData.uniforms = uniforms;
+  return mat;
+}
+
+// ---------------------------------------------------------------------------
+// Eau calme des bassins
+// ---------------------------------------------------------------------------
+
+export function createWaterMaterial() {
+  const uniforms = skyUniforms();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x5f8f9c, roughness: 0.06, metalness: 0 });
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPosW;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvWPosW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vWPosW;
+        ${SKY_DECL}
+        ${COMMON_GLSL}`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          vec2 p = vWPosW.xz;
+          float e = 0.08;
+          float h0 = aNoise(p * 1.6 + uTime * 0.15) + 0.5 * aNoise(p * 3.7 - uTime * 0.22);
+          float hx = aNoise((p + vec2(e, 0.0)) * 1.6 + uTime * 0.15) + 0.5 * aNoise((p + vec2(e, 0.0)) * 3.7 - uTime * 0.22);
+          float hz = aNoise((p + vec2(0.0, e)) * 1.6 + uTime * 0.15) + 0.5 * aNoise((p + vec2(0.0, e)) * 3.7 - uTime * 0.22);
+          vec3 wn = normalize(vec3(-(hx - h0) / e * 0.05, 1.0, -(hz - h0) / e * 0.05));
+          normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
+        }`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        {
+          vec3 V = normalize(vWPosW - cameraPosition);
+          vec3 wn = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+          vec3 R = reflect(V, wn);
+          R.y = abs(R.y);
+          float fres = 0.04 + 0.96 * pow(1.0 - max(dot(-V, wn), 0.0), 5.0);
+          totalEmissiveRadiance += aSky(normalize(R)) * (0.12 + 0.75 * fres);
+        }`);
+  };
+  mat.customProgramCacheKey = () => 'aube-water-v1';
+  mat.userData.uniforms = uniforms;
+  return mat;
+}
