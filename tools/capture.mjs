@@ -141,13 +141,15 @@ async function main() {
       fs.mkdirSync(path.join(out, 'views'), { recursive: true });
       const names = await page.evaluate(() => Object.keys(window.__aube.viewpoints));
       summary.views = [];
+      // Vues fixes : sans HUD, pour juger l'image seule.
+      await page.evaluate(() => { const h = document.getElementById('hud'); if (h) h.style.visibility = 'hidden'; });
       for (const n of names) {
         await page.evaluate((n) => { window.__aube.view(n); window.__aube.step(0.25); }, n);
         const f = path.join(out, 'views', n + '.png');
         await shot(f);
         summary.views.push(path.relative(out, f));
       }
-      await page.evaluate(() => window.__aube.followPlayer());
+      await page.evaluate(() => { window.__aube.followPlayer(); const h = document.getElementById('hud'); if (h) h.style.visibility = ''; });
     }
 
     let route = null;
@@ -219,7 +221,7 @@ async function main() {
     if (only.has('ui')) {
       fs.mkdirSync(path.join(out, 'ui'), { recursive: true });
       const p2 = await newPage(browser, base + 'index.html', errors);
-      await p2.waitForTimeout(4000);
+      await p2.waitForTimeout(12000);
       await p2.screenshot({ path: path.join(out, 'ui', 'title.png') });
       const p3 = await newPage(browser, base + 'index.html?test', errors);
       await p3.waitForFunction(() => window.__aube && window.__aube.ready, null, { timeout: 180000 });
