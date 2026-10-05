@@ -24,6 +24,7 @@ class Game {
     this.level = buildLevel(this.scene, this.physics, createMaterials());
     this.input = new Input(this.r.renderer.domElement);
     this.player = new Player(this.physics, this.camera);
+    this.player.attachBody(this.scene);
     this.audio = new Audio();
     this.ui = new UI(this);
 
