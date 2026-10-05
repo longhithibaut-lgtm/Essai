@@ -486,6 +486,12 @@ h2 {
   width: min(620px, 92vw);
   margin-left: max(28px, 7.2vw);
   padding-top: 2vh;
+  transition: opacity 0.6s var(--ease-soft);
+}
+
+/* Un feuillet ouvert sur le titre : la colonne s'efface, il ne reste que la ville floue. */
+body:has(#sheet:not([hidden])) .title-col {
+  opacity: 0;
 }
 
 .title-head {
