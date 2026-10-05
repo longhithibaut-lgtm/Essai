@@ -63,12 +63,15 @@ export class WindStreaks {
     this.material = new THREE.ShaderMaterial({
       vertexShader: VERT,
       fragmentShader: FRAG,
-      uniforms: { uColor: { value: new THREE.Color(3.0, 2.85, 2.65) }, uOpacity: { value: 0 } },
+      uniforms: { uColor: { value: new THREE.Color(2.3, 2.2, 2.05) }, uOpacity: { value: 0 } },
       transparent: true,
       depthWrite: false,
       blending: THREE.CustomBlending,
       blendSrc: THREE.OneFactor,
       blendDst: THREE.OneMinusSrcAlphaFactor,
+      // L'alpha de l'image sert de masque d'occlusion au rendu : on n'y touche pas.
+      blendSrcAlpha: THREE.ZeroFactor,
+      blendDstAlpha: THREE.OneFactor,
       fog: false,
     });
     const mesh = new THREE.Mesh(g, this.material);
@@ -116,8 +119,8 @@ export class WindStreaks {
     s.z = cam.z + uz * ahead + az * ca + bz * sa;
     const wall = this.wall;
     let onWall = false;
-    if (wall && r() < 0.7) {
-      // Course murale : la plupart des filets glissent au ras de la paroi, au-dessus ou en dessous
+    if (wall && r() < 0.5) {
+      // Course murale : un filet sur deux glisse au ras de la paroi, au-dessus ou en dessous
       // du regard : le mur, même lisse, défile alors sous les yeux.
       const v = r() < 0.65 ? -(0.45 + r() * 1.0) : 0.5 + r() * 0.8;
       const near = initial ? r() * 6 : 1.5 + r() * 4.5;
@@ -128,8 +131,8 @@ export class WindStreaks {
       onWall = true;
     }
     s.len = (0.9 + r() * 1.1) * (onWall ? 1.3 : 1);
-    s.w = (0.016 + r() * 0.016) * (onWall ? 1.4 : 1);
-    s.a = Math.min(1, 0.4 + r() * 0.6 + (onWall ? 0.25 : 0));
+    s.w = (0.014 + r() * 0.014) * (onWall ? 1.2 : 1);
+    s.a = Math.min(1, 0.4 + r() * 0.6 + (onWall ? 0.1 : 0));
     s.alive = true;
   }
 
@@ -146,9 +149,9 @@ export class WindStreaks {
   }
 
   update(dt, cam, vel, target) {
-    this.intensity += (target - this.intensity) * (1 - Math.exp(-(target > this.intensity ? 4 : 2.5) * dt));
+    this.intensity += (target - this.intensity) * (1 - Math.exp(-(target > this.intensity ? 4 : 4.5) * dt));
     const op = this.intensity;
-    this.material.uniforms.uOpacity.value = op * 0.62;
+    this.material.uniforms.uOpacity.value = op * 0.34;
     this.on = op > 0.02;
     if (!this.on) {
       for (const s of this.p) s.alive = false;
@@ -213,21 +216,22 @@ const FLOW_FRAG = /* glsl */ `
   void main() {
     vec2 d = (vP - uC) * vec2(uAspect, 1.0);
     float r = length(d);
-    float mask = smoothstep(0.68, 1.3, r);
+    float mask = smoothstep(0.8, 1.35, r);
     if (mask * uI < 0.003) discard;
     float u = atan(d.y, d.x) / 6.2831853 + 0.5;
     float N = 84.0;
     float idx = floor(u * N);
     float fa = fract(u * N);
     float ra = h1(idx), rb = h1(idx + 31.7), rc = h1(idx + 63.1);
-    float on = step(0.42, ra);
+    float on = step(0.6, ra);
     float line = 1.0 - smoothstep(0.0, 0.11 + 0.1 * rb, abs(fa - 0.5));
     float s = r * (0.9 + 0.8 * rb) - uTime * (1.6 + 1.4 * rc) + ra * 7.0;
     float f = fract(s);
-    float dash = smoothstep(0.0, 0.12, f) * (1.0 - smoothstep(0.35, 0.75, f));
+    // Tête nette, longue traîne qui s'efface : un souffle plutôt qu'un trait.
+    float dash = smoothstep(0.0, 0.06, f) * pow(1.0 - smoothstep(0.06, 0.8, f), 1.5);
     // Plus dense du côté du mur (course murale).
     float side = 1.0 + uWall.y * (d.x * uWall.x > 0.0 ? 1.0 : -0.6);
-    float a = uI * on * line * dash * mask * side * 0.13;
+    float a = uI * on * line * dash * mask * side * 0.07;
     if (a < 0.002) discard;
     gl_FragColor = vec4(uColor * a, a);
   }
@@ -245,7 +249,7 @@ export class SpeedFlow {
         uAspect: { value: 16 / 9 },
         uC: { value: new THREE.Vector2() },
         uWall: { value: new THREE.Vector2() },
-        uColor: { value: new THREE.Color(2.6, 2.5, 2.3) },
+        uColor: { value: new THREE.Color(2.2, 2.1, 2.0) },
       },
       transparent: true,
       depthTest: false,
@@ -253,6 +257,9 @@ export class SpeedFlow {
       blending: THREE.CustomBlending,
       blendSrc: THREE.OneFactor,
       blendDst: THREE.OneMinusSrcAlphaFactor,
+      // L'alpha de l'image sert de masque d'occlusion au rendu : on n'y touche pas.
+      blendSrcAlpha: THREE.ZeroFactor,
+      blendDstAlpha: THREE.OneFactor,
       fog: false,
     });
     const mesh = new THREE.Mesh(g, this.material);
@@ -275,7 +282,7 @@ export class SpeedFlow {
 
   // vel : vitesse (monde) ; target : 0..1 ; wallSide : -1/0/1 (mur à gauche ou à droite de l'image).
   update(dt, camera, vel, target, wallSide) {
-    this.intensity += (target - this.intensity) * (1 - Math.exp(-(target > this.intensity ? 6 : 2.2) * dt));
+    this.intensity += (target - this.intensity) * (1 - Math.exp(-(target > this.intensity ? 6 : 5) * dt));
     const u = this.material.uniforms;
     this.on = this.intensity > 0.02;
     u.uI.value = this.intensity;
@@ -288,6 +295,6 @@ export class SpeedFlow {
     const p = this._v.copy(vel).multiplyScalar(speed > 0.1 ? 10 / speed : 0).add(camera.position).project(camera);
     const ok = p.z < 1 && p.z > -1;
     u.uC.value.set(ok ? THREE.MathUtils.clamp(p.x, -0.45, 0.45) : 0, ok ? THREE.MathUtils.clamp(p.y, -0.35, 0.35) : 0);
-    u.uWall.value.set(wallSide, wallSide !== 0 ? 0.6 : 0);
+    u.uWall.value.set(wallSide, wallSide !== 0 ? 0.3 : 0);
   }
 }

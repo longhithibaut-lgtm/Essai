@@ -13,18 +13,21 @@ import { WindStreaks, SpeedFlow } from './streaks.js';
 // l'écran (coordonnées normalisées et distance à l'œil), si bien que les avant-bras entrent
 // toujours par les bords de l'image, quel que soit le champ de vision. En course, chaque
 // main monte à son tour jusqu'à hauteur du menton puis redescend sous le cadre ; au saut,
-// les deux bras se lèvent, s'ouvrent pour l'équilibre au sommet, puis se préparent à la
-// réception. La caméra n'en est jamais secouée.
+// le bras meneur balaie vers le haut, main grande ouverte, l'autre file en arrière, puis
+// les deux s'ouvrent pour l'équilibre au sommet et reviennent devant pour la réception.
+// La caméra n'en est jamais secouée.
 //
 // Chaque geste a son contact : une main « posée » est ancrée dans le monde (point, normale,
 // orientation) et y reste pendant que le corps bouge, l'épaule s'avançant au besoin ; elle
 // lâche quand le geste se termine ou que la prise sort de portée. Les doigts s'y ouvrent à
 // plat, écartés. Escalade : les paumes claquent l'une après l'autre sur le mur et glissent
-// vers le bas de l'écran pendant qu'on monte. Rétablissement : les doigts agrippent l'arête,
-// puis les paumes se plaquent sur le rebord, tournées vers l'intérieur, pour pousser.
-// Franchissement : la main gauche s'appuie à plat sur le muret. Course murale : la main côté
-// mur reste plaquée sur la paroi, l'autre bras s'ouvre vers le vide. Au sol : mains contre
-// un mur qu'on touche ou qu'on longe. Une ombre douce marque chaque paume posée.
+// vers le bas de l'écran pendant qu'on monte ; près du haut, les mains montent vers l'arête.
+// Rétablissement : paumes plaquées sur la face, seules les dernières phalanges accrochées
+// par-dessus l'arête, puis les mains passent sur le rebord et s'y posent à plat, doigts
+// écartés tournés vers l'intérieur, pour pousser. Franchissement : la main gauche s'appuie
+// à plat sur le muret. Course murale : la main côté mur reste plaquée sur la paroi, l'autre
+// bras bat la mesure vers le vide. Glissade : la main droite frotte le sol. Au sol : mains
+// contre un mur qu'on touche ou qu'on longe. Une ombre douce marque chaque paume posée.
 //
 // Repère « caméra » : x à droite, y en haut, -z devant. Les poses sont écrites pour la
 // main droite ; la gauche est leur miroir (x inversé).
@@ -1068,7 +1071,7 @@ export class FirstPersonBody {
     }
     const dx = m.dx, dz = m.dz;
     const rx = -dz, rz = dx;
-    const ahead = 0.68 - 0.2 * smoothstep(0.1, 0.55, t);
+    const ahead = 0.86 - 0.26 * smoothstep(0.1, 0.55, t);
     let ax = cp.x + dx * ahead - rx * 0.12, az = cp.z + dz * ahead - rz * 0.12;
     // Toujours sur le dessus de l'obstacle, entre l'arête et le bord opposé.
     const lo = Math.min(m.edge + (dx + dz) * 0.05, m.far - (dx + dz) * 0.07);
@@ -1183,18 +1186,23 @@ export class FirstPersonBody {
     const w = pl.wall;
     const h = this.hands[w.side > 0 ? 0 : 1];
     if (entered) this.wallCycle = 0;
-    this.wallCycle += dt * 1.6;
+    this.wallCycle += dt * 1.9;
     const sp = pl.visualSpeed || 1;
     const ux = pl.vel.x / sp, uz = pl.vel.z / sp;
     const c = this.wallCycle % 1;
-    const along = 0.54 - 0.3 * c;
+    // La paume frotte la paroi et le mur l'entraîne nettement vers l'arrière (on lit la vitesse
+    // d'une image à l'autre), puis elle se soulève et se repose loin devant.
+    const along = 0.64 - 0.44 * c;
     const vp = pl.viewPos;
-    const y = vp.y + 1.58 + 0.02 * Math.sin(c * Math.PI);
+    // Jamais dans la corniche (son débord varie d'un immeuble à l'autre) : sous elle.
+    const y = Math.min(vp.y + 1.58 + 0.02 * Math.sin(c * Math.PI), w.box.maxY - 0.8);
     this._wallPoint(w, cp.x + ux * along, y, cp.z + uz * along, this.v1);
     this.v2.set(ux * 0.74, 0.67, uz * 0.74);
     this.v3.set(w.nx, 0, w.nz);
-    // Coude vers le bas et vers le corps : il ne doit pas entrer dans le mur.
+    // Coude vers le bas et vers le corps : il ne doit pas entrer dans le mur, ni posé ni
+    // pendant que la main se soulève pour se reposer plus loin.
     h.cPole.set(-0.25, -1, 0.15);
+    h.tPole.set(-0.25, -1, 0.15);
     const lifted = c > 0.84 || this.modeT < 0.06;
     // La paume pousse sur le mur un peu vers l'avant (talon de la main et pouce en appui) :
     // le dos de la main se tourne vers nous au lieu d'être vu par la tranche.
@@ -1505,14 +1513,14 @@ export class FirstPersonBody {
       const plane = this._plane(w) + (w.nx + w.nz) * faceInset(w.box);
       const dist = w.nx !== 0 ? Math.abs(cp.x - plane) : Math.abs(cp.z - plane);
       this.streaks.setWall(-w.nx, -w.nz, dist);
-    } else if (mode === 'air') wind = 0.55 * smoothstep(-6, -11, vy) + 0.4 * smoothstep(7.8, 9.5, speed);
-    else if (mode === 'ground' || mode === 'slide') wind = 0.45 * smoothstep(7.8, 9.5, speed);
+    } else if (mode === 'air') wind = 0.5 * smoothstep(-7, -12, vy) + 0.3 * smoothstep(9, 10.5, speed);
+    else if (mode === 'ground' || mode === 'slide') wind = 0.3 * smoothstep(9, 10.5, speed);
     if (mode !== 'wallrun') this.streaks.setWall(0, 0, 0);
     this.streaks.update(dt, cp, pl.vel, wind);
     // Souffle sur le pourtour de l'image : course murale et longues chutes seulement.
     let flow = 0;
     if (mode === 'wallrun') flow = 0.85;
-    else if (mode === 'air') flow = 0.7 * smoothstep(-6, -12, vy);
+    else if (mode === 'air') flow = 0.6 * smoothstep(-8, -13, vy);
     this.flow.update(dt, cam, pl.vel, flow, mode === 'wallrun' && pl.wall ? pl.wall.side : 0);
 
     // La mesh suit la caméra ; on retient sa position pour la reconnaître au rendu.
