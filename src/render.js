@@ -2,14 +2,16 @@ import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
 // Rendu d'Aube : scène en HDR (MSAA 4x) avec texture de profondeur, puis
-//  - occlusion ambiante (SAO) à demi-résolution, floutée en respectant la profondeur ;
-//    elle n'assombrit que la part de lumière indirecte, que les matériaux écrivent
-//    dans l'alpha (voir atmosphere.js) : recoins creusés, plein soleil intact,
+//  - occlusion ambiante (SAO à deux échelles : contact et abri) à demi-résolution,
+//    floutée en respectant la profondeur ; elle n'assombrit que la part de lumière
+//    indirecte, que les matériaux écrivent dans l'alpha (voir atmosphere.js) : pieds
+//    de murs et dessous d'auvents descendent vers de vrais sombres, plein soleil intact,
 //  - rais de lumière à demi-résolution quand le soleil est dans le champ,
 //  - halo doux (bloom « dual filter » sur 6 niveaux),
 //  - moyenne locale à 1/8 pour un contraste local (« clarté ») discret,
-//  - une passe finale : occlusion, halo, rais, clarté, courbe de Lottes, étalonnage
-//    ombres lavande / lumières dorées, vignette, grain.
+//  - une passe finale : netteté adaptative, occlusion, halo, rais, clarté, courbe de
+//    Lottes contrastée (vrais sombres doux, plein soleil qui monte au blanc),
+//    étalonnage ombres fraîches / lumières dorées, vignette légère, grain.
 // Peu de passes plein écran : seule la scène et la passe finale sont en pleine résolution.
 
 const VS = /* glsl */ `
@@ -31,13 +33,32 @@ const AO_FS = /* glsl */ `
   uniform sampler2D tDepth;
   uniform mat4 uProjInv;
   uniform vec2 uTexel;     // texel pleine résolution
-  uniform float uRadius, uIntensity, uBias, uProjScale;
+  uniform float uRadius, uRadius2, uIntensity, uIntensity2, uBias, uProjScale, uFloor;
   varying vec2 vUv;
   ${BAYER}
-  #define NS 12
+  #define NS 8
   vec3 viewPos(vec2 uv, float d) {
     vec4 v = uProjInv * vec4(vec3(uv, d) * 2.0 - 1.0, 1.0);
     return v.xyz / v.w;
+  }
+  // Une échelle d'obscurance : NS échantillons en spirale dans un disque de rayon r (m).
+  float sao(vec3 P, vec3 N, float z, float r, float ssMax, float rnd, float turns) {
+    float ssR = min(uProjScale * r / z, ssMax);
+    if (ssR <= 1.0) return 0.0;
+    float r2 = r * r;
+    float sum = 0.0;
+    for (int i = 0; i < NS; i++) {
+      float alpha = (float(i) + 0.5) / float(NS);
+      float ang = alpha * turns + rnd * 6.2831853;
+      vec2 suv = vUv + vec2(cos(ang), sin(ang)) * (alpha * ssR) * uTexel;
+      vec3 Q = viewPos(suv, texture2D(tDepth, suv).x);
+      vec3 v = Q - P;
+      float vv = dot(v, v);
+      float vn = dot(v, N);
+      float f = max(r2 - vv, 0.0);
+      sum += f * f * f * max((vn - uBias * z * 0.02 - 0.01) / (0.02 + vv), 0.0);
+    }
+    return sum / (r2 * r2 * r2 * float(NS));
   }
   void main() {
     float d = texture2D(tDepth, vUv).x;
@@ -54,26 +75,17 @@ const AO_FS = /* glsl */ `
     vec3 N = normalize(cross(dx, dy));
 
     float z = -P.z;
-    float ssR = min(uProjScale * uRadius / z, 110.0);
     float ao = 1.0;
-    if (ssR > 1.0 && z < 110.0) {
+    if (z < 120.0) {
       float rnd = bayer4(gl_FragCoord.xy) + 0.03125;
-      float r2 = uRadius * uRadius;
-      float sum = 0.0;
-      for (int i = 0; i < NS; i++) {
-        float alpha = (float(i) + 0.5) / float(NS);
-        float ang = alpha * 43.98 + rnd * 6.2831853; // 7 tours
-        vec2 suv = vUv + vec2(cos(ang), sin(ang)) * (alpha * ssR) * uTexel;
-        vec3 Q = viewPos(suv, texture2D(tDepth, suv).x);
-        vec3 v = Q - P;
-        float vv = dot(v, v);
-        float vn = dot(v, N);
-        float f = max(r2 - vv, 0.0);
-        sum += f * f * f * max((vn - uBias * z * 0.02 - 0.01) / (0.02 + vv), 0.0);
-      }
-      // Réponse douce : les recoins se creusent sans jamais virer au noir.
-      ao = mix(0.42, 1.0, exp(-sum * uIntensity * 5.0 / (r2 * r2 * r2 * float(NS))));
-      ao = mix(ao, 1.0, smoothstep(60.0, 110.0, z));
+      // Deux échelles : le contact (joints, pieds de murs, coins) et l'abri
+      // (dessous d'auvents, renfoncements, ruelles étroites).
+      float s1 = sao(P, N, z, uRadius, 70.0, rnd, 25.13);
+      float s2 = sao(P, N, z, uRadius2, 150.0, rnd + 0.37, 31.4);
+      ao = exp(-s1 * uIntensity * 5.0) * exp(-s2 * uIntensity2 * 5.0);
+      // Réponse douce : les recoins se creusent franchement, sans jamais boucher.
+      ao = mix(uFloor, 1.0, ao);
+      ao = mix(ao, 1.0, smoothstep(70.0, 120.0, z));
     }
     gl_FragColor = vec4(ao, z, 0.0, 1.0);
   }
@@ -118,11 +130,15 @@ const RAYS_FS = /* glsl */ `
       vec2 inside = step(vec2(0.0), p) * step(p, vec2(1.0));
       float sky = step(0.99999, texture2D(tDepth, p).x) * inside.x * inside.y;
       vec2 ds = (p - uSun) * vec2(uAspect, 1.0);
-      sky *= exp(-dot(ds, ds) * 11.0);
+      sky *= exp(-dot(ds, ds) * 16.0);
       acc += sky * w;
       w *= 0.975;
     }
     acc /= float(NR);
+    // Les rais naissent autour du soleil : loin de lui à l'écran, ils s'éteignent
+    // (sinon chaque pixel recevrait la même part de ciel et l'image se voilerait).
+    vec2 dp = (vUv - uSun) * vec2(uAspect, 1.0);
+    acc *= exp(-dot(dp, dp) * 6.0);
     gl_FragColor = vec4(vec3(acc), 1.0);
   }
 `;
@@ -142,6 +158,8 @@ const DOWN_FS = /* glsl */ `
     vec3 k = s(vec2(-2.0, 2.0)), l = s(vec2(0.0, 2.0)), m = s(vec2(2.0, 2.0));
     vec3 col = (d + e + i + j) * 0.125 + (a + b + f + g) * 0.03125 + (b + c + g + h) * 0.03125 + (f + g + k + l) * 0.03125 + (g + h + l + m) * 0.03125;
     if (uFirst > 0.5) {
+      // Un pixel NaN isolé ne doit pas se répandre en carré noir dans tout le halo.
+      if (any(isnan(col))) col = vec3(0.0);
       col = min(col, vec3(40.0));
       float br = max(col.r, max(col.g, col.b));
       float soft = clamp(br - uThreshold + uKnee, 0.0, 2.0 * uKnee);
@@ -169,7 +187,8 @@ const UP_FS = /* glsl */ `
 // ---------- Passe finale ----------
 const FINAL_FS = /* glsl */ `
   uniform sampler2D tColor, tAO, tBloom, tRays, tLocal;
-  uniform float uClarity;
+  uniform float uClarity, uSharpen;
+  uniform vec2 uTexel;
   uniform float uBloom, uExposure, uAO, uVignette, uFade, uTime, uRays;
   uniform vec3 uFadeColor, uSunColor;
   uniform vec3 uAOTint;
@@ -197,6 +216,19 @@ const FINAL_FS = /* glsl */ `
 
   void main() {
     vec4 scene = texture2D(tColor, vUv);
+    // Netteté adaptative (à la CAS) : un pixel s'écarte un peu de la moyenne de ses
+    // quatre voisins, sans jamais sortir de leur plage (pas de liseré ni de halo).
+    // Arêtes, joints et grain de la matière gagnent en précision.
+    if (uSharpen > 0.0) {
+      vec3 n = texture2D(tColor, vUv + vec2(0.0, uTexel.y)).rgb;
+      vec3 s = texture2D(tColor, vUv - vec2(0.0, uTexel.y)).rgb;
+      vec3 e = texture2D(tColor, vUv + vec2(uTexel.x, 0.0)).rgb;
+      vec3 w = texture2D(tColor, vUv - vec2(uTexel.x, 0.0)).rgb;
+      vec3 mn = min(min(min(n, s), min(e, w)), scene.rgb);
+      vec3 mx = max(max(max(n, s), max(e, w)), scene.rgb);
+      vec3 avg = (n + s + e + w) * 0.25;
+      scene.rgb = clamp(scene.rgb + (scene.rgb - avg) * uSharpen, mn, mx);
+    }
     vec3 col = scene.rgb;
     // L'occlusion n'agit que sur la part indirecte (alpha écrit par les matériaux) :
     // recoins et pieds de murs se creusent dans l'ombre, le plein soleil reste net.
@@ -204,17 +236,18 @@ const FINAL_FS = /* glsl */ `
     float ao = texture2D(tAO, vUv).r;
     float occ = 1.0 - indirect * (1.0 - ao) * uAO;
     // Elle tire vers le bleu-lavande plutôt que vers le gris.
-    col *= pow(vec3(max(occ, 0.0)), uAOTint);
-    col += texture2D(tBloom, vUv).rgb * uBloom;
-    col += uSunColor * texture2D(tRays, vUv).r * uRays;
     // Clarté : un pixel plus clair que son voisinage (1/8 d'écran) s'éclaire un peu,
     // un pixel plus sombre se creuse. Le relief et la matière ressortent sans durcir.
+    // (Comparée sur la scène brute, comme la moyenne locale, avant halo et rais.)
     {
-      float Lp = dot(col, LUM);
+      float Lp = dot(scene.rgb, LUM);
       float Lb = dot(texture2D(tLocal, vUv).rgb, LUM);
       float k = clamp(pow(max(Lp, 1e-4) / max(Lb, 1e-4), uClarity), 0.72, 1.35);
       col *= k;
     }
+    col *= pow(vec3(max(occ, 0.0)), uAOTint);
+    col += texture2D(tBloom, vUv).rgb * uBloom;
+    col += uSunColor * texture2D(tRays, vUv).r * uRays;
     col = max(col * uExposure, 0.0);
     // Par canal (les hautes lumières blanchissent comme sur un film), avec une part
     // appliquée à la luminance seule pour ne pas trop saturer les teintes.
@@ -222,6 +255,13 @@ const FINAL_FS = /* glsl */ `
     vec3 perChannel = tone(col);
     vec3 byLum = col * (tone1(lin) / max(lin, 1e-5));
     col = min(mix(perChannel, byLum, uCurveLum), vec3(1.0));
+    // Comme un film : les très hautes lumières pâlissent vers le blanc (le plein
+    // soleil et le ciel près du soleil montent vraiment au blanc, sans virer à l'orange).
+    {
+      float lt = dot(col, LUM);
+      float mx = max(col.r, max(col.g, col.b));
+      col = mix(col, vec3(mx), smoothstep(0.72, 0.99, lt) * 0.28);
+    }
 
     // Étalonnage en espace d'affichage : ombres bleu-lavande, lumières dorées.
     float l = dot(col, LUM);
@@ -234,7 +274,7 @@ const FINAL_FS = /* glsl */ `
     vec3 srgb = toSRGB(col);
 
     vec2 dv = vUv - 0.5;
-    float v = smoothstep(0.95, 0.25, length(dv * vec2(1.15, 1.0)));
+    float v = smoothstep(1.05, 0.4, length(dv * vec2(1.1, 1.0)));
     srgb *= mix(1.0 - uVignette, 1.0, v);
     srgb = mix(srgb, uFadeColor, uFade);
     srgb += (ign(gl_FragCoord.xy + fract(uTime * 7.0) * 37.0) - 0.5) / 255.0 * 1.5;
@@ -270,47 +310,52 @@ export class Renderer {
       tDepth: { value: null },
       uProjInv: { value: new THREE.Matrix4() },
       uTexel: { value: new THREE.Vector2() },
-      uRadius: { value: 1.1 },
-      uIntensity: { value: 1.8 },
+      uRadius: { value: 0.75 },
+      uRadius2: { value: 3.0 },
+      uIntensity: { value: 3.0 },
+      uIntensity2: { value: 1.6 },
+      uFloor: { value: 0.07 },
       uBias: { value: 0.5 },
       uProjScale: { value: 1 },
     });
     this.aoBlurMat = mat(AO_BLUR_FS, { tAO: { value: null }, uTexel: { value: new THREE.Vector2() } });
     this.raysMat = mat(RAYS_FS, { tDepth: { value: null }, uSun: { value: new THREE.Vector2() }, uAspect: { value: 1 } });
-    this.downMat = mat(DOWN_FS, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uThreshold: { value: 1.9 }, uKnee: { value: 1.0 }, uFirst: { value: 0 } });
+    this.downMat = mat(DOWN_FS, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uThreshold: { value: 2.6 }, uKnee: { value: 1.2 }, uFirst: { value: 0 } });
     this.upMat = mat(UP_FS, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uWeight: { value: 1 } }, { blending: THREE.AdditiveBlending, transparent: true });
     this.finalMat = mat(FINAL_FS, {
       tColor: { value: null },
       tAO: { value: null },
       tBloom: { value: null },
       tLocal: { value: null },
+      uSharpen: { value: 0.45 },
+      uTexel: { value: new THREE.Vector2() },
       uClarity: { value: 0.22 },
       tRays: { value: null },
-      uBloom: { value: 0.16 },
-      uExposure: { value: 1.2 },
+      uBloom: { value: 0.2 },
+      uExposure: { value: 1.4 },
       uAO: { value: 0.9 },
-      uAOTint: { value: new THREE.Vector3(1.15, 1.05, 0.8) },
+      uAOTint: { value: new THREE.Vector3(1.2, 1.05, 0.75) },
       uRays: { value: 0 },
       uSunColor: { value: new THREE.Color(1.0, 0.82, 0.6) },
-      uVignette: { value: 0.18 },
+      uVignette: { value: 0.1 },
       uFade: { value: 0 },
       uFadeColor: { value: new THREE.Color() },
       uTime: { value: 0 },
-      uShadowTint: { value: new THREE.Vector3(0.94, 0.95, 1.06) },
-      uHighTint: { value: new THREE.Vector3(1.01, 1.0, 0.975) },
-      uFilmBase: { value: new THREE.Vector3(0.012, 0.01, 0.02) },
-      uSat: { value: 1.1 },
+      uShadowTint: { value: new THREE.Vector3(0.985, 0.99, 1.02) },
+      uHighTint: { value: new THREE.Vector3(1.015, 1.0, 0.965) },
+      uFilmBase: { value: new THREE.Vector3(0.0035, 0.003, 0.006) },
+      uSat: { value: 1.14 },
       uCurve: { value: new THREE.Vector4() },
-      uCurveLum: { value: 0.62 },
+      uCurveLum: { value: 0.35 },
       uDebug: { value: 0 },
     });
-    this.setCurve(1.45, 0.99, 10, 0.18, 0.2);
+    this.setCurve(1.9, 0.94, 4, 0.18, 0.12);
     // La couleur de fondu est appliquée en espace d'affichage.
     this.finalMat.uniforms.uFadeColor.value.setRGB(1.0, 0.957, 0.918);
 
     // Réglages (utiles pour mesurer le coût de chaque effet, ou pour alléger le rendu).
     this.settings = { ao: true, bloom: true, rays: true, clarity: true };
-    this.clarity = 0.22;
+    this.clarity = 0.28;
     this._createTargets();
     this.envReady = false;
     this._slow = 0;
@@ -348,6 +393,7 @@ export class Renderer {
     }
     this.size = new THREE.Vector2(w, h);
     this.aoMat.uniforms.uTexel.value.set(1 / w, 1 / h);
+    this.finalMat.uniforms.uTexel.value.set(1 / w, 1 / h);
     this.aoBlurMat.uniforms.uTexel.value.set(1 / hw, 1 / hh);
     this._raysCleared = false;
     this._aoCleared = false;
@@ -510,7 +556,7 @@ export class Renderer {
     fu.tAO.value = this.aoBlurRT.texture;
     fu.tBloom.value = this.bloomRTs[0].texture;
     fu.tRays.value = this.raysRT.texture;
-    fu.uRays.value = rays * 0.55;
+    fu.uRays.value = rays * 0.3;
     fu.uTime.value = time;
     this._pass(this.finalMat, null);
   }
@@ -533,7 +579,7 @@ export class Renderer {
       const from = this.bloomRTs[i];
       um.tSrc.value = from.texture;
       um.uTexel.value.set(1 / from.width, 1 / from.height);
-      um.uWeight.value = 0.8;
+      um.uWeight.value = 0.58; // halo serré : pas de voile laiteux sur toute l’image
       r.autoClear = false;
       this._pass(this.upMat, this.bloomRTs[i - 1]);
       r.autoClear = true;
