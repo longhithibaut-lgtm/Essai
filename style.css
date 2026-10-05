@@ -1055,7 +1055,7 @@ body:not(.end-dawn) .screen-end {
   font-family: var(--serif);
   font-style: italic;
   font-size: clamp(16px, 2.3vh, 22px);
-  color: var(--ink-soft);
+  color: var(--ink-mid);
   text-shadow: var(--text-glow);
 }
 

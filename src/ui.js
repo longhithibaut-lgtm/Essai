@@ -212,6 +212,12 @@ export class UI {
 
   _toDawn() {
     if (this.dawn) return;
+    // Page ouverte sans passer par showEnd (script extérieur, test) : les mots de la
+    // fin se remplissent quand même, avec la promenade en cours, sans rien enregistrer.
+    if (!this._endFilled) {
+      const g = this.game;
+      this._fillEnd(g.runTime || 0, g.collected || 0, g.level?.orbs?.length || this.total, false);
+    }
     this.dawn = true;
     this.el.hud.hidden = true;
     this.el.body.dataset.screen = 'end';
@@ -448,6 +454,7 @@ export class UI {
     if (name !== 'end') {
       // Le plan de la cloche ne vaut que pour la page de fin.
       this.dawn = false;
+      this._endFilled = false;
       el.body.classList.remove('end-dawn');
     }
     if (name === 'play' || name === 'pause') this.game.birds?.setVisible(false);
@@ -684,6 +691,21 @@ export class UI {
     this._finished = fin;
   }
 
+  // Les mots de la page de fin. Avec keep, la promenade compte pour le record.
+  _fillEnd(time, orbs, total, keep) {
+    const { el } = this;
+    const best = load('best', null);
+    const isBest = best === null || time < best;
+    if (keep && isBest) save('best', time);
+    this._endFilled = true;
+    el.endOrbs.textContent = orbs === 0 ? 'Aucune, cette fois' : orbs >= total ? `Les ${total}, toutes` : `${orbs} sur ${total}`;
+    el.endTime.textContent = formatDuration(time);
+    el.endBest.textContent = best === null ? 'Ta première promenade' : isBest ? 'Ta promenade la plus fluide' : `La plus fluide : ${formatDuration(best)}`;
+    el.endLine.textContent = orbs >= total
+      ? 'Toutes les lueurs t’ont suivi jusqu’à la cloche. Le matin s’est levé avec toi.'
+      : 'Le matin s’est levé avec toi. Quelques lueurs attendent encore, quand tu voudras.';
+  }
+
   _fillPause() {
     const { el, game } = this;
     const cp = game.checkpoint;
@@ -696,15 +718,7 @@ export class UI {
 
   showEnd(time, orbs, total) {
     const { el } = this;
-    const best = load('best', null);
-    const isBest = best === null || time < best;
-    if (isBest) save('best', time);
-    el.endOrbs.textContent = orbs === 0 ? 'Aucune, cette fois' : orbs >= total ? `Les ${total}, toutes` : `${orbs} sur ${total}`;
-    el.endTime.textContent = formatDuration(time);
-    el.endBest.textContent = best === null ? 'Ta première promenade' : isBest ? 'Ta promenade la plus fluide' : `La plus fluide : ${formatDuration(best)}`;
-    el.endLine.textContent = orbs >= total
-      ? 'Toutes les lueurs t’ont suivi jusqu’à la cloche. Le matin s’est levé avec toi.'
-      : 'Le matin s’est levé avec toi. Quelques lueurs attendent encore, quand tu voudras.';
+    this._fillEnd(time, orbs, total, true);
     // La caméra rejoint le plan de la cloche (titlecam.js) sous le voile : pas de flou derrière.
     this.dawn = true;
     el.body.classList.add('end-dawn');
