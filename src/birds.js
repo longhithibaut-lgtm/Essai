@@ -96,7 +96,8 @@ export class Birds {
     this.mesh.visible = v;
   }
 
-  // anchor : position du plan (pos), et son cap (yaw) ; le vol tourne devant lui.
+  // shot : position du plan (pos), son cap (yaw) et le décalage du vol (birds) ;
+  // le vol tourne devant lui.
   update(dt, shot) {
     this.mesh.visible = true;
     this.time += dt;
@@ -105,8 +106,10 @@ export class Birds {
     const sy = Math.sin(shot.yaw), cy = Math.cos(shot.yaw);
     const fx = -sy, fz = -cy; // devant
     const rx = cy, rz = -sy; // à droite
-    // Centre de la boucle : loin devant, un peu au-dessus de l'horizon.
-    const cx = shot.pos[0] + fx * 72, cz = shot.pos[2] + fz * 72, cyy = shot.pos[1] + 13;
+    // Centre de la boucle : loin devant, un peu au-dessus de l'horizon, décalé du côté
+    // de l'image où ne se pose aucun texte (shot.birds, en mètres vers la droite).
+    const off = shot.birds ?? 0;
+    const cx = shot.pos[0] + fx * 72 + rx * off, cz = shot.pos[2] + fz * 72 + rz * off, cyy = shot.pos[1] + 13;
     const w = (Math.PI * 2) / 95; // un tour en un peu plus d'une minute et demie
     const a = t * w + 2.2;
     // Grande ellipse : de gauche à droite, en s'éloignant puis en revenant.

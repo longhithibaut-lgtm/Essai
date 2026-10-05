@@ -331,34 +331,6 @@ body[data-screen='end'] .reticle {
 }
 
 kbd {
-  border-color: rgba(59, 45, 79, 0.4);
-  background: #fff;
-  box-shadow: inset 0 -2px 0 rgba(59, 45, 79, 0.1), 0 1px 3px rgba(59, 45, 79, 0.1);
-  color: var(--ink);
-}
-
-/* Pointeur pas encore capturé : une invitation douce */
-.lock {
-  position: absolute;
-  left: 50%;
-  top: calc(50% + 34px);
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 22px;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(var(--shade), 0.4), 0 1px 16px rgba(var(--shade), 0.55);
-  white-space: nowrap;
-  opacity: 0;
-  transform: translateX(-50%);
-  transition: opacity 0.8s var(--ease-soft);
-}
-
-.lock.show {
-  opacity: 1;
-  animation: breathe-o 3s ease-in-out infinite;
-}
-
-kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -367,9 +339,9 @@ kbd {
   padding: 0 0.5em;
   margin: 0 0.2em;
   border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.18);
-  box-shadow: inset 0 -2px 0 rgba(255, 255, 255, 0.24), 0 1px 8px rgba(var(--shade), 0.2);
+  border: 1px solid rgba(59, 45, 79, 0.4);
+  background: #fff;
+  box-shadow: inset 0 -2px 0 rgba(59, 45, 79, 0.1), 0 1px 3px rgba(59, 45, 79, 0.1);
   font-family: var(--sans);
   font-size: 0.76em;
   font-weight: 500;
@@ -419,12 +391,6 @@ h2 {
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
-}
-
-.menu-row {
-  flex-direction: row;
-  justify-content: center;
-  gap: 40px;
 }
 
 .menu-item {
@@ -492,26 +458,37 @@ h2 {
 }
 
 /* ---------- Titre ---------- */
+/* Comme le menu de Mirror's Edge : la colonne de texte à gauche, côté soleil, dans la
+   lumière blonde de l'aube ; la ville en gradins occupe le reste de l'image. Pas de
+   cadre ni de plaque : un halo tiède qui part du soleil, et un vignettage très doux. */
 .screen-title {
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
-  justify-items: center;
-  /* Un vignettage doux (les coins s'assombrissent, le soleil rayonne au centre),
-     un zénith un peu plus profond et un sol plus doux sous le menu : le plan est
-     composé pour que chaque ligne se lise sur le ciel ou sur les nuages. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 1fr;
   background:
-    radial-gradient(ellipse 80% 78% at 50% 40%, rgba(60, 44, 96, 0) 52%, rgba(60, 44, 96, 0.16) 78%, rgba(52, 38, 86, 0.34) 100%),
-    linear-gradient(180deg, rgba(74, 58, 120, 0.22) 0%, rgba(74, 58, 120, 0.06) 22%, rgba(74, 58, 120, 0) 38%),
-    linear-gradient(0deg, rgba(255, 247, 242, 0.4) 0%, rgba(255, 247, 242, 0) 20%);
+    radial-gradient(ellipse 48% 80% at 13% 50%, rgba(255, 246, 236, 0.62) 0%, rgba(255, 244, 234, 0.4) 40%, rgba(255, 242, 232, 0.12) 72%, rgba(255, 242, 232, 0) 100%),
+    radial-gradient(ellipse 90% 85% at 62% 44%, rgba(60, 44, 96, 0) 55%, rgba(60, 44, 96, 0.12) 82%, rgba(52, 38, 86, 0.26) 100%),
+    linear-gradient(180deg, rgba(74, 58, 120, 0.12) 0%, rgba(74, 58, 120, 0) 26%);
+}
+
+.title-col {
+  grid-row: 1;
+  align-self: center;
+  justify-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: clamp(26px, 6.5vh, 70px);
+  width: min(620px, 92vw);
+  margin-left: max(28px, 7.2vw);
+  padding-top: 2vh;
 }
 
 .title-head {
-  grid-row: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding-top: 5.5vh;
-  text-align: center;
+  align-items: flex-start;
+  text-align: left;
 }
 
 .mark {
@@ -522,6 +499,11 @@ h2 {
   stroke: var(--ink);
   stroke-width: 1.5;
   stroke-linecap: round;
+}
+
+.title-head .mark {
+  width: clamp(84px, 12.5vh, 132px);
+  margin-left: -0.6%;
 }
 
 .mark .thin {
@@ -553,21 +535,18 @@ h2 {
   to { opacity: 0.85; }
 }
 
-/* Le mot « Aube » en encre prune, posé devant le soleil qui se lève : un halo
-   chaud l'entoure, comme une lettre à contre-jour. */
+/* Le mot « Aube » en encre prune, dans la lumière blonde du côté du soleil. */
 .logo {
   display: flex;
-  justify-content: center;
-  margin: 10px 0 0;
-  padding-left: 0.3em;
+  margin: 6px 0 0 -0.04em;
   font-family: var(--serif);
   font-weight: 600;
-  font-size: clamp(78px, min(10vw, 18vh), 210px);
+  font-size: clamp(78px, min(9.4vw, 17vh), 200px);
   line-height: 0.92;
-  letter-spacing: 0.3em;
+  letter-spacing: 0.24em;
   text-transform: uppercase;
   color: var(--ink);
-  text-shadow: 0 0 2px rgba(var(--halo), 0.5), 0 0 34px rgba(255, 236, 214, 0.85), 0 0 90px rgba(255, 226, 196, 0.6);
+  text-shadow: 0 0 2px rgba(var(--halo), 0.5), 0 0 34px rgba(255, 236, 214, 0.9), 0 0 90px rgba(255, 226, 196, 0.6);
 }
 
 .logo span {
@@ -586,24 +565,31 @@ h2 {
 }
 
 .tagline {
-  margin: 1.9vh 0 0;
-  padding-left: 0.44em;
-  font-size: clamp(13px, 1.95vh, 20px);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 2.2vh 0 0;
+  font-size: clamp(12px, 1.8vh, 18px);
   font-weight: 500;
-  letter-spacing: 0.44em;
+  letter-spacing: 0.4em;
   text-transform: uppercase;
   color: var(--ink);
   text-shadow: 0 0 12px rgba(255, 240, 228, 0.95), 0 0 2px rgba(255, 240, 228, 0.8);
   animation: fade-up 2s var(--ease) 1.1s both;
 }
 
+.tagline::before {
+  content: '';
+  width: 34px;
+  height: 1px;
+  background: var(--coral);
+}
+
 .title-ground {
-  grid-row: 3;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  padding-bottom: 4vh;
   animation: fade-up 1.8s var(--ease) 1.5s both;
 }
 
@@ -613,8 +599,9 @@ h2 {
 }
 
 .menu-title {
-  align-items: center;
-  gap: 2px;
+  align-items: flex-start;
+  gap: 0;
+  margin-left: 50px;
 }
 
 .screen-title .menu-item,
@@ -623,9 +610,13 @@ h2 {
   text-shadow: 0 0 14px rgba(var(--halo), 1), 0 0 3px rgba(var(--halo), 0.9);
 }
 
-.screen-title .menu-item:not(.primary),
-.screen-end .menu-item:not(.primary) {
+.screen-title .menu-item:not(.primary) {
   color: var(--ink-soft);
+}
+
+.screen-end .menu-item:not(.primary) {
+  color: var(--ink);
+  opacity: 0.82;
 }
 
 .screen-title .menu-item:not(.primary):hover,
@@ -637,13 +628,32 @@ h2 {
 
 .screen-title .menu-item,
 .screen-end .menu-item {
-  font-size: clamp(14px, 1.95vh, 20px);
-  padding: clamp(9px, 1.25vh, 14px) 2px;
+  font-size: clamp(14px, 1.9vh, 19px);
+  padding: clamp(8px, 1.15vh, 13px) 2px;
 }
 
 .screen-title .menu-item.primary {
-  font-size: clamp(18px, 2.65vh, 27px);
-  padding: clamp(12px, 1.65vh, 18px) 2px;
+  font-size: clamp(18px, 2.6vh, 27px);
+  padding: clamp(10px, 1.5vh, 16px) 2px;
+}
+
+/* Sur le titre, l'entrée choisie est soulignée d'un trait de lumière qui se dessine. */
+.screen-title .menu-item::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  right: 0.3em;
+  bottom: 4px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--coral), rgba(238, 132, 102, 0));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.7s var(--ease);
+}
+
+.screen-title .menu-item:hover::after,
+.screen-title .menu-item:focus-visible::after {
+  transform: scaleX(1);
 }
 
 .screen-end .menu-item.primary {
@@ -660,7 +670,7 @@ h2 {
 }
 
 .loading {
-  margin: 0;
+  margin: 0 0 0 50px;
   font-family: var(--serif);
   font-style: italic;
   font-size: 18px;
@@ -674,23 +684,27 @@ h2 {
 }
 
 .touch-note {
-  margin: 4px 0 0;
+  margin: 4px 0 0 50px;
   font-size: 14px;
   color: var(--coral-deep);
 }
 
+/* En haut à gauche, sur le ciel, en écho à la légende du plan en haut à droite. */
 .foot {
-  grid-row: 4;
+  position: absolute;
+  left: max(28px, 7.2vw);
+  top: 5.2vh;
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 24px 3.3vh;
-  font-size: clamp(11px, 1.55vh, 14px);
+  gap: 14px;
+  margin: 0;
+  font-size: clamp(10px, 1.4vh, 12px);
   font-weight: 500;
-  letter-spacing: 0.32em;
+  letter-spacing: 0.3em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  text-shadow: 0 0 10px rgba(var(--halo), 1);
+  text-shadow: 0 0 10px rgba(var(--halo), 1), 0 0 2px rgba(var(--halo), 0.8);
+  line-height: clamp(15px, 2.15vh, 22px);
   animation: fade-up 1.8s var(--ease) 2s both;
 }
 
@@ -701,11 +715,44 @@ h2 {
   background: var(--coral);
 }
 
+/* Légende du plan, comme sur un carton de cinéma : le lieu qu'on regarde, en haut à
+   droite, sur le ciel. */
+.still-caption {
+  position: absolute;
+  right: max(24px, 3.8vw);
+  top: 5.2vh;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: clamp(15px, 2.15vh, 22px);
+  letter-spacing: 0.01em;
+  color: #fffaf5;
+  text-shadow: 0 1px 2px rgba(var(--shade), 0.3), 0 0 16px rgba(var(--shade), 0.35);
+  animation: fade-up 2.4s var(--ease) 2.6s both;
+}
+
+.still-rule {
+  width: 30px;
+  height: 1px;
+  background: rgba(255, 250, 245, 0.85);
+  box-shadow: 0 0 6px rgba(var(--shade), 0.3);
+}
+
+/* Machine très lente : le titre est déjà composé, sans animation d'entrée. */
+body.instant .screen-title,
+body.instant .screen-title * {
+  animation: none !important;
+}
+
 /* Les animations d'entrée attendent que le voile se lève. */
 body.waking .title-head *,
 body.waking .logo span,
 body.waking .title-ground,
-body.waking .foot {
+body.waking .foot,
+body.waking .still-caption {
   animation-play-state: paused;
 }
 
@@ -867,44 +914,54 @@ body:has(#pause:not([hidden])) .lights {
   color: var(--ink-soft);
 }
 
-/* ---------- Fin : la dernière page, posée sur le soleil levant ---------- */
+/* ---------- Fin : la dernière page, posée au-dessus de la cloche ---------- */
+/* Même mise en page que le titre : la colonne de texte à gauche dans un halo tiède,
+   la ville dorée du chemin parcouru sur le reste de l'image. */
 .screen-end {
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  justify-items: center;
-  text-align: center;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
   background:
-    radial-gradient(ellipse 80% 78% at 50% 40%, rgba(60, 44, 96, 0) 52%, rgba(60, 44, 96, 0.14) 78%, rgba(52, 38, 86, 0.3) 100%),
-    linear-gradient(180deg, rgba(74, 58, 120, 0.18) 0%, rgba(74, 58, 120, 0.05) 24%, rgba(74, 58, 120, 0) 40%),
-    linear-gradient(0deg, rgba(255, 247, 242, 0.55) 0%, rgba(255, 247, 242, 0.18) 22%, rgba(255, 247, 242, 0) 40%);
+    radial-gradient(ellipse 52% 92% at 14% 58%, rgba(255, 246, 236, 0.72) 0%, rgba(255, 244, 234, 0.48) 42%, rgba(255, 242, 232, 0.16) 72%, rgba(255, 242, 232, 0) 100%),
+    radial-gradient(ellipse 90% 85% at 62% 44%, rgba(60, 44, 96, 0) 55%, rgba(60, 44, 96, 0.1) 82%, rgba(52, 38, 86, 0.22) 100%);
   animation-duration: 1.6s;
 }
 
-/* Sans le plan du soleil levant derrière (par exemple en test), un voile doux et flou. */
+/* Sans le plan de la cloche derrière (par exemple en test), un voile doux et flou. */
 body:not(.end-dawn) .screen-end {
   background:
-    linear-gradient(180deg, rgba(255, 246, 240, 0.72) 0%, rgba(255, 244, 236, 0.5) 50%, rgba(255, 246, 240, 0.8) 100%);
+    linear-gradient(90deg, rgba(255, 247, 241, 0.94) 0%, rgba(255, 245, 238, 0.84) 34%, rgba(255, 243, 236, 0.36) 62%, rgba(255, 243, 236, 0.06) 100%);
   backdrop-filter: blur(6px) saturate(1.05);
   -webkit-backdrop-filter: blur(6px) saturate(1.05);
 }
 
-.end-head {
-  grid-row: 1;
+.end-col {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
+  gap: clamp(22px, 5vh, 54px);
+  width: min(640px, 92vw);
+  margin-left: max(28px, 7.2vw);
+  text-align: left;
+}
+
+.end-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 12px;
-  padding: 9vh 24px 0;
 }
 
 .end-head .mark {
-  width: clamp(88px, 13vh, 140px);
-  margin-bottom: 4px;
+  width: clamp(76px, 10.5vh, 116px);
+  margin: 0 0 4px -0.6%;
 }
 
 .end-kicker {
+  display: flex;
+  align-items: center;
+  gap: 16px;
   margin: 0;
-  padding-left: 0.42em;
   font-size: clamp(12px, 1.7vh, 16px);
   font-weight: 500;
   letter-spacing: 0.42em;
@@ -914,7 +971,7 @@ body:not(.end-dawn) .screen-end {
 }
 
 .end-title {
-  font-size: clamp(54px, min(6.6vw, 12.5vh), 124px);
+  font-size: clamp(50px, min(6.2vw, 11.5vh), 116px);
   font-weight: 500;
   color: var(--ink);
   text-shadow: 0 0 2px rgba(var(--halo), 0.5), 0 0 34px rgba(255, 236, 214, 0.85), 0 0 80px rgba(255, 226, 196, 0.5);
@@ -922,42 +979,40 @@ body:not(.end-dawn) .screen-end {
 
 .end-line {
   margin: 4px 0 0;
-  max-width: 32em;
+  max-width: 24em;
   font-family: var(--serif);
   font-style: italic;
-  font-size: clamp(20px, 3vh, 30px);
+  font-size: clamp(19px, 2.8vh, 28px);
   line-height: 1.4;
   color: var(--ink);
   text-shadow: 0 0 14px rgba(var(--halo), 1), 0 0 3px rgba(var(--halo), 0.9);
 }
 
 .end-ground {
-  grid-row: 3;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 0 24px 7vh;
+  align-items: flex-start;
+  gap: 12px;
   animation: fade-up 1.8s var(--ease) 0.8s both;
 }
 
 .end-stats {
   display: flex;
-  justify-content: center;
-  gap: 64px;
+  gap: 56px;
   margin: 0;
+  padding: 16px 0 0;
+  border-top: 1px solid rgba(59, 45, 79, 0.18);
 }
 
 .end-stat {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
 }
 
 .end-stat dt {
-  padding-left: 0.38em;
-  font-size: clamp(11px, 1.55vh, 14px);
+  font-size: clamp(11px, 1.5vh, 13px);
   font-weight: 500;
   letter-spacing: 0.38em;
   text-transform: uppercase;
@@ -971,7 +1026,7 @@ body:not(.end-dawn) .screen-end {
   gap: 12px;
   margin: 0;
   font-family: var(--serif);
-  font-size: clamp(28px, 4.2vh, 42px);
+  font-size: clamp(28px, 4.1vh, 40px);
   font-weight: 500;
   line-height: 1.1;
   color: var(--ink);
@@ -981,13 +1036,20 @@ body:not(.end-dawn) .screen-end {
 }
 
 .end-best {
-  margin: 0 0 10px;
+  margin: 0 0 6px;
   min-height: 1.2em;
   font-family: var(--serif);
   font-style: italic;
-  font-size: clamp(16px, 2.35vh, 23px);
+  font-size: clamp(16px, 2.3vh, 22px);
   color: var(--ink-soft);
   text-shadow: 0 0 12px rgba(var(--halo), 1);
+}
+
+.menu-end {
+  flex-direction: row;
+  align-items: center;
+  gap: 44px;
+  margin-left: 22px;
 }
 
 /* ---------- Feuillets ---------- */
@@ -1236,15 +1298,23 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
 }
 
 /* ---------- Petits écrans ---------- */
+@media (max-width: 900px) {
+  .still-caption {
+    display: none;
+  }
+}
+
 @media (max-width: 700px) {
   .logo {
-    letter-spacing: 0.2em;
-    padding-left: 0.2em;
+    letter-spacing: 0.16em;
   }
   .tagline {
-    letter-spacing: 0.22em;
-    padding-left: 0.22em;
+    letter-spacing: 0.2em;
     font-size: 11px;
+  }
+  .screen-title,
+  .screen-end {
+    background: linear-gradient(90deg, rgba(255, 246, 238, 0.82) 0%, rgba(255, 244, 236, 0.5) 70%, rgba(255, 244, 236, 0.2) 100%);
   }
   .foot {
     gap: 10px;
@@ -1270,9 +1340,9 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
   .end-stats {
     gap: 32px;
   }
-  .menu-row {
+  .menu-end {
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;
     gap: 4px;
   }
   .keys li {
