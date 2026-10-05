@@ -721,7 +721,7 @@ const ARCH_FRAG_HEAD = /* glsl */ `
         pN = normalize(pN - Tu * sign(sxg) * 0.75 * gs);
         // grain de l'enduit sous la peinture : il frise au soleil, de près
         vec2 gr = aGrain(uv + seed * 3.0, fw, 1.0);
-        pN = normalize(pN + (Tu * gr.x + Tv * gr.y) * 0.75);
+        pN = normalize(pN + (Tu * gr.x + Tv * gr.y) * 0.6);
         // écaillures : la peinture saute par petites plaques le long des joints et au
         // pied des levées ; l'enduit gris-rose apparaît, avec un liseré d'ombre au bord
         float footL = smoothstep(0.9, 1.24, ly - lid * 1.3);

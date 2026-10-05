@@ -230,9 +230,9 @@ export function lavender(ctx, x, y, z, w, d, o = {}) {
     const r = 0.15 + rand() * 0.09;
     blob(lctx, px, y + r * 0.45, pz, r, pick(LEAF.olive, rand), [px, y, pz], { detail: 1, height: r * 0.6, sy: 0.55, sway: 0.15, dim: 0.88 });
     const leaf = new THREE.Color(pick(LEAF.olive, rand)).multiplyScalar(0.8);
-    const flower = new THREE.Color(pick([0x8f72c8, 0x7f63bb, 0x9c82d2, 0x8a6dbf], rand));
+    const flower = new THREE.Color(pick([0x7a58b8, 0x6c4cab, 0x8565c2, 0x7354b0], rand));
     const bot = [leaf.r * 0.7, leaf.g * 0.7, leaf.b * 0.7];
-    const top = [flower.r * 0.8, flower.g * 0.8, flower.b * 0.8];
+    const top = [flower.r * 0.7, flower.g * 0.7, flower.b * 0.7];
     const a0 = rand() * Math.PI;
     for (let k = 0; k < 3; k++) {
       const h = 0.36 + rand() * 0.2, wd = r * 2.4 + rand() * 0.12;
