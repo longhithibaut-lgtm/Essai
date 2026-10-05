@@ -1,0 +1,13 @@
+{
+  "name": "aube",
+  "private": true,
+  "type": "module",
+  "description": "Aube : un jeu de parkour calme en 3D, jouable dans le navigateur, fait avec three.js.",
+  "scripts": {
+    "start": "npx serve -l 8080 .",
+    "capture": "node tools/capture.mjs"
+  },
+  "devDependencies": {
+    "three": "0.186.1"
+  }
+}

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aube</title>
+    <meta name="description" content="Aube : un parcours de parkour calme à la première personne, au-dessus d'une mer de nuages. Fait avec three.js." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;1,400;1,500&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="game"></div>
+
+    <div id="hud" hidden>
+      <div class="reticle"></div>
+      <div class="orbs"><span class="orb-icon"></span><span id="orb-count">0</span><span class="orb-total">/ 12</span></div>
+      <div id="hint" class="hint"></div>
+    </div>
+
+    <section id="title" class="screen">
+      <div class="title-block">
+        <h1>Aube</h1>
+        <p class="subtitle">Un parcours dans la lumière du matin, au-dessus des nuages.</p>
+        <button id="start-btn" class="btn">Commencer</button>
+        <p id="loading" class="loading">Chargement…</p>
+        <ul class="controls">
+          <li><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> ou <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> se déplacer</li>
+          <li><span class="mouse">Souris</span> regarder</li>
+          <li><kbd>Espace</kbd> sauter, courir sur les murs, grimper</li>
+          <li><kbd>Maj</kbd> ou <kbd>C</kbd> glisser</li>
+          <li><kbd>Échap</kbd> pause</li>
+        </ul>
+        <p id="touch-note" class="touch-note" hidden>Aube se joue au clavier et à la souris, sur ordinateur.</p>
+      </div>
+    </section>
+
+    <section id="pause" class="screen dim" hidden>
+      <div class="panel">
+        <h2>Pause</h2>
+        <button id="resume-btn" class="btn">Reprendre</button>
+        <label class="setting" for="sens">Sensibilité de la souris
+          <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1" />
+        </label>
+        <label class="setting" for="vol">Volume
+          <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8" />
+        </label>
+        <button id="restart-btn" class="btn btn-quiet">Recommencer le parcours</button>
+      </div>
+    </section>
+
+    <section id="end" class="screen dim" hidden>
+      <div class="panel">
+        <h2>La cloche a sonné</h2>
+        <div class="results">
+          <div><span class="label">Temps</span><span id="end-time">0:00</span></div>
+          <div><span class="label">Lueurs</span><span id="end-orbs">0 / 12</span></div>
+        </div>
+        <p id="end-best" class="best"></p>
+        <button id="again-btn" class="btn">Rejouer</button>
+      </div>
+    </section>
+
+    <noscript>Aube a besoin de JavaScript.</noscript>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

@@ -1,5 +1,31 @@
 # Essai
 
+## Aube
+
+Un parcours de parkour calme, à la première personne, au-dessus d'une mer de nuages à l'aube. Jouable dans le navigateur, fait avec [three.js](https://threejs.org/).
+
+### Jouer
+
+Il faut servir le dossier avec un petit serveur local (les modules JavaScript ne se chargent pas en ouvrant `index.html` directement) :
+
+```
+npx serve .
+```
+
+puis ouvrir l'adresse affichée (par exemple http://localhost:3000). three.js est chargé depuis le CDN jsdelivr, aucune installation n'est nécessaire.
+
+### Commandes
+
+- `Z` `Q` `S` `D` (ou `W` `A` `S` `D`) : se déplacer
+- Souris : regarder
+- `Espace` : sauter, courir sur les murs, grimper
+- `Maj` ou `C` : glisser
+- `Échap` : pause, `M` : couper le son
+
+### Capture automatique
+
+`node tools/capture.mjs` lance le jeu dans Chromium sans écran, fait jouer un pilote automatique sur tout le parcours et enregistre des images dans `.captures/latest/` (points de vue, séquences de mouvement, interface, mesures). Il faut d'abord `npm install` pour avoir three.js en local.
+
 ## Skill Gauntlet Loop
 
 Ce dépôt inclut le skill **gauntlet-loop** pour Claude Code, dans `.claude/skills/gauntlet-loop/`.
