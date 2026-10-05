@@ -127,6 +127,8 @@ class Game {
       case 'jump': case 'walljump': a.jump(); break;
       case 'land': a.land(data.impact); break;
       case 'slideStart': a.slide(); break;
+      case 'touch': a.touch?.(data); break;
+      case 'mantlePush': a.effort?.(); break;
       case 'vault': case 'mantle': a.land(4); break;
     }
   }
