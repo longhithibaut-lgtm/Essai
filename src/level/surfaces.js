@@ -363,11 +363,12 @@ const ARCH_FRAG_HEAD = /* glsl */ `
         pN = normalize(vec3(bv.x * 0.3, 1.0, bv.y * 0.3));
         col = mix(col, col * vec3(0.78, 0.86, 0.66), g * moss * 0.8);
         // fissures fines sur quelques grandes dalles
-        float crackOn = step(0.82, h2) * step(0.9, ts) * (1.0 - smoothstep(0.02, 0.06, max(fwp.x, fwp.y)));
+        float crackOn = step(0.88, h2) * step(0.9, ts) * (1.0 - smoothstep(0.02, 0.06, max(fwp.x, fwp.y)));
         vec2 tl = pp / ts - tid;
         float cn = texture2D(uNoise, (tl + tid * 0.37) * 0.35).g;
-        float crack = aLine(abs(cn - 0.5 + (tl.x - 0.5) * 0.15), 0.006, max(fwp.x, fwp.y) / ts * 2.0) * crackOn;
-        col *= 1.0 - 0.28 * crack;
+        float seg = smoothstep(0.35, 0.6, texture2D(uNoise, (tl + tid * 0.21) * 0.6 + 0.5).b);
+        float crack = aLine(abs(cn - 0.5 + (tl.x - 0.5) * 0.15), 0.004, max(fwp.x, fwp.y) / ts * 2.0) * crackOn * seg;
+        col *= 1.0 - 0.2 * crack;
         // taches d'eau séchée, grandes et douces
         float wet = smoothstep(0.58, 0.78, texture2D(uNoise, vWPos.xz * 0.013 + 0.71).r);
         col *= 1.0 - 0.07 * wet;
@@ -736,7 +737,7 @@ export function createFabricMaterial() {
 
 export function createWaterMaterial() {
   const uniforms = skyUniforms();
-  const mat = new THREE.MeshStandardMaterial({ color: 0x5f8f9c, roughness: 0.06, metalness: 0 });
+  const mat = new THREE.MeshStandardMaterial({ color: 0x4a7a86, roughness: 0.06, metalness: 0 });
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -764,7 +765,7 @@ export function createWaterMaterial() {
           vec3 R = reflect(V, wn);
           R.y = abs(R.y);
           float fres = 0.04 + 0.96 * pow(1.0 - max(dot(-V, wn), 0.0), 5.0);
-          totalEmissiveRadiance += aSky(normalize(R)) * (0.12 + 0.75 * fres);
+          totalEmissiveRadiance += aSky(normalize(R)) * (0.07 + 0.62 * fres);
         }`);
   };
   mat.customProgramCacheKey = () => 'aube-water-v1';

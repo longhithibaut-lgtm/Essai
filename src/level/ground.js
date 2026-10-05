@@ -68,3 +68,19 @@ export function hatch(ctx, x, y, z, w = 1.0, d = 1.0) {
   if (ctx.ao) ctx.ao(x, z, w + 0.7, d + 0.7, y, 0.9);
   if (ctx.physics) ctx.solid([x - w / 2, y, z - d / 2], [x + w / 2, y + 0.48, z + d / 2], 'prop');
 }
+
+// Bassin maçonné : quatre margelles, fond sombre, eau un peu sous le bord.
+export function basin(ctx, minX, maxX, minZ, maxZ, y, h, o = {}) {
+  const A = ctx.arch;
+  const t = o.rim ?? 0.24;
+  const st = { kind: K.STONE, color: o.color ?? PAL.stone };
+  A.boxMinMax(minX, y, minZ, maxX, y + h, minZ + t, st);
+  A.boxMinMax(minX, y, maxZ - t, maxX, y + h, maxZ, st);
+  A.boxMinMax(minX, y, minZ + t, minX + t, y + h, maxZ - t, st);
+  A.boxMinMax(maxX - t, y, minZ + t, maxX, y + h, maxZ - t, st);
+  A.boxMinMax(minX + t, y, minZ + t, maxX - t, y + 0.03, maxZ - t, { kind: K.STONE, color: 0x6f7f7a, skipBottom: true });
+  ctx.water.boxMinMax(minX + t, y + h - 0.1, minZ + t, maxX - t, y + h - 0.065, maxZ - t, {});
+  if (ctx.ao) ctx.ao((minX + maxX) / 2, (minZ + maxZ) / 2, maxX - minX + 0.6, maxZ - minZ + 0.6, y, 0.8);
+  if (ctx.physics && o.collide !== false) ctx.solid([minX, y, minZ], [maxX, y + h, maxZ], 'rim');
+  return y + h - 0.065;
+}

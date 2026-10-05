@@ -10,7 +10,7 @@ import { roofDress, facadeDress } from './level/dress.js';
 import { buildCity, aqueduct } from './level/city.js';
 import { Signs } from './level/signs.js';
 import { ContactShadows } from './level/ao.js';
-import { inlay, path, drain, gutter, pipes, hatch } from './level/ground.js';
+import { inlay, path, drain, gutter, pipes, hatch, basin } from './level/ground.js';
 import { junctionGrime } from './level/grime.js';
 
 // Le parcours : des terrasses blanches posées sur de hautes tours, au-dessus des
@@ -225,13 +225,11 @@ export function buildLevel(scene, physics, materials) {
   cypress(ctx, -6.4, H_TOP, -102.6, { h: 3.8 });
   for (let i = 0; i < 5; i++) A.box(-3.0 + (i % 2) * 0.35, H_TOP + 0.175, -90 - i * 1.6, 0.7, 0.03, 0.55, { kind: K.STONE, color: PAL.coping });
   // Bassin
-  A.boxMinMax(2.0, H_TOP, -94.7, 6.4, H_TOP + 0.25, -89.3, { kind: K.STONE, color: PAL.stone });
-  ctx.solid([2.0, H_TOP, -94.7], [6.4, H_TOP + 0.25, -89.3], 'rim');
-  ctx.water.boxMinMax(2.25, H_TOP + 0.2, -94.45, 6.15, H_TOP + 0.235, -89.55, {});
+  const wy = basin(ctx, 2.0, 6.4, -94.7, -89.3, H_TOP, 0.32);
   for (let i = 0; i < 9; i++) {
     const x = 2.6 + rand() * 3.2, z = -94 + rand() * 4.2;
-    A.cylinder(x, H_TOP + 0.236, z, 0.16 + rand() * 0.1, 0.16, 0.008, 8, { kind: K.PLAIN, color: 0x8fb886, caps: true });
-    if (rand() < 0.4) A.box(x + 0.05, H_TOP + 0.26, z, 0.08, 0.05, 0.08, { kind: K.PLAIN, color: 0xfad4e0 });
+    A.cylinder(x, wy + 0.002, z, 0.16 + rand() * 0.1, 0.16, 0.008, 8, { kind: K.PLAIN, color: 0x8fb886, caps: true });
+    if (rand() < 0.4) A.box(x + 0.05, wy + 0.03, z, 0.08, 0.05, 0.08, { kind: K.PLAIN, color: 0xfad4e0 });
   }
   bench(ctx, 4.2, H_TOP, -96.4, { rotY: Math.PI, collide: true });
   tree(ctx, 6.6, H_TOP, -100.6, { kind: 'blossom', scale: 0.95 });
@@ -314,14 +312,12 @@ export function buildLevel(scene, physics, materials) {
   {
     // Fontaine murale : vasque, plaque, bec de bronze
     const zf = -167.4;
-    A.boxMinMax(5.0, K_TOP, zf - 0.7, 5.62, K_TOP + 0.58, zf + 0.7, { kind: K.STONE, color: 0xd8c7b4 });
-    A.boxMinMax(4.98, K_TOP + 0.56, zf - 0.76, 5.68, K_TOP + 0.64, zf + 0.76, { kind: K.STONE, color: PAL.coping });
-    ctx.water.boxMinMax(5.06, K_TOP + 0.5, zf - 0.62, 5.56, K_TOP + 0.56, zf + 0.62, {});
+    basin(ctx, 5.0, 5.66, zf - 0.72, zf + 0.72, K_TOP, 0.6, { rim: 0.12, color: 0xd8c7b4, collide: false });
     A.boxMinMax(5.0, K_TOP + 0.64, zf - 0.5, 5.1, K_TOP + 1.9, zf + 0.5, { kind: K.STONE, color: PAL.stoneWarm });
     A.boxMinMax(5.0, K_TOP + 1.9, zf - 0.32, 5.12, K_TOP + 2.08, zf + 0.32, { kind: K.STONE, color: PAL.coping });
     A.tube([5.1, K_TOP + 1.28, zf], [5.3, K_TOP + 1.22, zf], 0.03, 6, { kind: K.METAL, color: 0xb48a5a });
     shadows.add(5.3, zf, 1.6, 2.0, K_TOP, 0.9);
-    ctx.solid([5.0, K_TOP, zf - 0.7], [5.62, K_TOP + 0.64, zf + 0.7], 'fountain');
+    ctx.solid([5.0, K_TOP, zf - 0.72], [5.66, K_TOP + 0.6, zf + 0.72], 'fountain');
   }
   facadeDress(ctx, bKR, '-x', { floors: 3, flowers: 0.35, balcony: 0.2, ac: 0.08, awnings: 0.08, banners: 2, ivy: 1, minY: 2.6 });
   facadeDress(ctx, bKL, '+x', { floors: 2, flowers: 0.3, balcony: 0, ac: 0.1, minY: -6 });
@@ -500,9 +496,7 @@ export function buildLevel(scene, physics, materials) {
     ctx.fabric.cloth((s, tt) => [x + (s - 0.5) * 0.08, N_TOP + 3.18 - tt * (0.5 + (i % 3) * 0.12), z], 1, 3, { color: col, pin: (s, tt) => tt });
   }
   for (const [x0, x1] of [[2.6, 6.6], [10.4, 14.4]]) {
-    A.boxMinMax(x0, N_TOP, -197.5, x1, N_TOP + 0.3, -192.5, { kind: K.STONE, color: PAL.stone });
-    ctx.solid([x0, N_TOP, -197.5], [x1, N_TOP + 0.3, -192.5], 'rim');
-    ctx.water.boxMinMax(x0 + 0.22, N_TOP + 0.24, -197.28, x1 - 0.22, N_TOP + 0.27, -192.72, {});
+    basin(ctx, x0, x1, -197.5, -192.5, N_TOP, 0.34);
   }
   for (const [x, z] of [[7.0, -191.2], [10.0, -191.2], [7.0, -196.6], [10.0, -196.6]]) lantern(ctx, x, N_TOP, z, { h: 1.3 });
   tree(ctx, 2.6, N_TOP, -205.8, { kind: 'blossom', scale: 1.25 });
