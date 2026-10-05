@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PAL, building } from './props.js';
 import { roofDress, facadeDress } from './dress.js';
 import { K } from './surfaces.js';
+import { rng, Batch } from './kit.js';
 
 // Ville intermédiaire autour du parcours : îlots d'immeubles blancs à corniches,
 // toits habités, quelques tours repères. Rien ici n'a de collision (hors d'atteinte).
@@ -9,7 +10,11 @@ import { K } from './surfaces.js';
 // Blancs et crèmes en majorité, quelques tons plus soutenus (ocre, terre cuite rosée,
 // sauge, pierre grise) pour que la ville se lise en couches.
 const COLORS = [PAL.plaster, PAL.plaster, PAL.plasterWarm, PAL.plasterWarm, PAL.plasterCool, PAL.plasterSand, PAL.plasterRose, PAL.plasterSage, 0xf7f4f0,
-  0xeac9a2, 0xe7b9a3, 0xd3dbc8, 0xdcd5cb, 0xcfd6de, 0xf0d5b4];
+  0xeac9a2, 0xe7b9a3, 0xd3dbc8, 0xdcd5cb, 0xcfd6de, 0xf0d5b4,
+  // tons soutenus mais doux : ocre, terre cuite rosée, sauge, gris-bleu, pierre
+  0xdcae7e, 0xd49a84, 0xb9c3a6, 0xadb7c4, 0xc9b9a6, 0xe0b48f,
+  // vieilles façades plus franches (Gênes, Naples) : la ville se lit en couches dans la brume
+  0xd6a070, 0xc98f7a, 0xa9b896, 0xe3c088, 0xb7a08c, 0xcf9f86];
 
 function overlaps(a, list, m) {
   return list.some((b) => a.minX < b.maxX + m && a.maxX > b.minX - m && a.minZ < b.maxZ + m && a.maxZ > b.minZ - m);
@@ -76,12 +81,34 @@ export function buildCity(ctx, { corridor, keepOut, cap = () => Infinity }) {
             roofDress(nctx, { ...b, minX: b.minX, maxX: b.minX + inset, top: t }, { batch, far: true, parapet: false });
             t += h;
           }
-          // Édicule technique à persiennes, mât
+          // Couronnement : édicule à persiennes, ou lanterne coiffée d'une pyramide de
+          // tuiles, ou petite coupole sur tambour (tirage à part : la ville ne bouge pas)
           const ew = Math.min(tier.w, tier.d) * 0.45;
-          batch.box(tier.cx, t + 1.5, tier.cz, ew, 3.0, ew * 0.8, { kind: K.VENT, color: PAL.metalLight });
-          batch.box(tier.cx, t + 3.08, tier.cz, ew + 0.3, 0.16, ew * 0.8 + 0.3, { kind: K.PLASTER, color: PAL.coping });
-          roofDress(nctx, tier, { batch, far: !near, parapet: true });
-          roofTop = t + 3.2;
+          const cr = rng(Math.floor(Math.abs(tier.cx * 31.7 + tier.cz * 7.3)) + 11)();
+          if (cr < 0.34) {
+            const lw = Math.min(tier.w, tier.d) * 0.62;
+            batch.box(tier.cx, t + 1.4, tier.cz, lw, 2.8, lw, { kind: K.FACADE, color: b.color ?? col, style: 0.13 });
+            batch.box(tier.cx, t + 2.9, tier.cz, lw + 0.5, 0.25, lw + 0.5, { kind: K.PLASTER, color: PAL.coping });
+            const cone = new THREE.ConeGeometry(lw * 0.78, lw * 0.75, 4, 1);
+            cone.rotateY(Math.PI / 4);
+            batch.geometry(cone, new THREE.Matrix4().makeTranslation(tier.cx, t + 3.02 + lw * 0.375, tier.cz), { kind: K.TERRA, color: [0xd38f70, 0xc98166, 0xdb9a7a][Math.floor(cr * 30) % 3] });
+            roofTop = t + 3.0 + lw * 0.75;
+          } else if (cr < 0.52) {
+            const r = Math.min(tier.w, tier.d) * 0.3;
+            batch.cylinder(tier.cx, t, tier.cz, r * 1.05, r * 1.05, 1.6, 16, { kind: K.PLASTER, color: b.color ?? col, caps: false });
+            batch.cylinder(tier.cx, t + 1.6, tier.cz, r * 1.18, r * 1.18, 0.18, 16, { kind: K.PLASTER, color: PAL.coping });
+            const dg = new THREE.SphereGeometry(r, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+            batch.geometry(dg, new THREE.Matrix4().makeTranslation(tier.cx, t + 1.78, tier.cz), { kind: K.PLASTER, color: cr < 0.43 ? 0xdfe8ee : 0xf6f1ea });
+            roofTop = t + 1.78 + r;
+          } else {
+            batch.box(tier.cx, t + 1.5, tier.cz, ew, 3.0, ew * 0.8, { kind: K.VENT, color: PAL.metalLight });
+            batch.box(tier.cx, t + 3.08, tier.cz, ew + 0.3, 0.16, ew * 0.8 + 0.3, { kind: K.PLASTER, color: PAL.coping });
+            roofTop = t + 3.2;
+          }
+          // Sous un couronnement, l'habillage du toit est tiré quand même (la suite de la
+          // ville garde sa place) mais jeté : rien ne vient percer la lanterne ou la coupole.
+          if (cr < 0.52) roofDress({ ...nctx, foliage: new Batch() }, tier, { batch: new Batch(), far: !near, parapet: true });
+          else roofDress(nctx, tier, { batch, far: !near, parapet: true });
         } else if (rand() < 0.42 && b.w > 8 && b.d > 8) {
           const inset = 1.8 + rand() * 1.5;
           const h = tower ? 4 + rand() * 10 : 3.4;

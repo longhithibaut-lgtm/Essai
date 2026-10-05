@@ -13,9 +13,10 @@ function makeTexture() {
     for (let x = 0; x < S; x++) {
       // distance à un rectangle intérieur, normalisée
       const u = Math.abs((x + 0.5) / S - 0.5) * 2, v = Math.abs((y + 0.5) / S - 0.5) * 2;
-      const dx = Math.max(0, u - 0.35) / 0.65, dy = Math.max(0, v - 0.35) / 0.65;
+      // cœur net au contact, queue courte : l'ombre tient l'objet sans voiler le sol
+      const dx = Math.max(0, u - 0.4) / 0.6, dy = Math.max(0, v - 0.4) / 0.6;
       const d = Math.min(1, Math.hypot(dx, dy));
-      const a = Math.pow(1 - d, 2.2);
+      const a = Math.pow(1 - d, 2.8);
       const o = (y * S + x) * 4;
       img.data[o] = img.data[o + 1] = img.data[o + 2] = 255;
       img.data[o + 3] = Math.round(a * 255);
@@ -80,7 +81,7 @@ export class ContactShadows {
     g.setIndex(this.n > 65535 ? new THREE.Uint32BufferAttribute(this.idx, 1) : new THREE.Uint16BufferAttribute(this.idx, 1));
     g.computeBoundingSphere();
     const mat = new THREE.MeshBasicMaterial({
-      color: 0x3a2c3c, map: makeTexture(), vertexColors: true, transparent: true, opacity: 0.46,
+      color: 0x3a2c3c, map: makeTexture(), vertexColors: true, transparent: true, opacity: 0.36,
       depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
     });
     const m = new THREE.Mesh(g, mat);

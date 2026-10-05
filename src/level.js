@@ -3,15 +3,16 @@ import { K, createArchMaterial, createFoliageMaterial, createFabricMaterial, cre
 import { Batch, rng } from './level/kit.js';
 import {
   PAL, mixHex, building, parapet, railing, edgeMark, acUnit, waterTank, vent, chimney, antenna, hut, planter, bench,
-  lantern, pot, crate, cafeSet, stringLights, shadeSail, laundry, duct, skylight,
+  lantern, pot, crate, cafeSet, stringLights, shadeSail, laundry, duct, skylight, upstand,
 } from './level/props.js';
 import { tree, cypress, bush, hedge, lavender, ivy, grass, wisteria } from './level/vegetation.js';
 import { roofDress, facadeDress } from './level/dress.js';
 import { buildCity, aqueduct } from './level/city.js';
 import { Signs } from './level/signs.js';
 import { ContactShadows } from './level/ao.js';
-import { inlay, path, drain, gutter, pipes, hatch, basin } from './level/ground.js';
+import { inlay, path, drain, gutter, pipes, hatch, basin, shiftedSlabs } from './level/ground.js';
 import { junctionGrime } from './level/grime.js';
+import { tieAnchor, downpipe, blockWall } from './level/details.js';
 
 // Le parcours : des terrasses blanches posées sur de hautes tours, au-dessus des
 // nuages, dans une ville calme. Le joueur avance vers -z. Collisions : boîtes alignées.
@@ -90,6 +91,11 @@ export function buildLevel(scene, physics, materials) {
   drain(ctx, 3.1, 0, -5.6);
   drain(ctx, -2.95, 0, 2.9);
   hatch(ctx, 5.2, 0, 3.6, 0.9, 0.9);
+  // Quelques dalles ont joué avec les années (tirage à part : le reste ne bouge pas)
+  const slabRand = rng(77);
+  shiftedSlabs(ctx, -1.98, 1.98, -6.6, 6.6, 0.012, { tile: 1.0, n: 3, rand: slabRand, gravel: 0 });
+  shiftedSlabs(ctx, 2.45, 6.6, -1.6, 6.5, 0, { tile: 0.55, n: 4, rand: slabRand, color: PAL.deck });
+  shiftedSlabs(ctx, -3.6, -2.4, 1.0, 6.5, 0, { tile: 0.55, n: 2, rand: slabRand, color: PAL.deck });
 
   // =====================================================================
   // B : premier saut, puis double franchissement
@@ -122,16 +128,42 @@ export function buildLevel(scene, physics, materials) {
   edgeMark(ctx, 1.6, 3.0, -32, -31.75, 2.0);
   path(ctx, 0.3, 2.85, -31.72, -19.4, 2.0, { tile: 1.0, color: 0xefe4d8, borderColor: 0xc7b19f });
   drain(ctx, -1.0, 2.0, -30.6);
+  shiftedSlabs(ctx, -3.5, 0.25, -31.6, -19.6, 2.0, { tile: 0.08, n: 7, rand: slabRand, color: 0xecc8b2 });
+  shiftedSlabs(ctx, 0.62, 2.53, -31.6, -19.6, 2.012, { tile: 1.0, n: 2, rand: slabRand, color: 0xefe4d8, gravel: 0 });
   // Mur corail : flanc d'un immeuble blanc
   const bWR = B({ minX: 3, maxX: 12, minZ: -43, maxZ: -31, top: 7.0, style: 0.33, color: PAL.plaster, tag: 'wallrun', faces: ['+z', '-z', '+x'], quoins: false });
   A.boxMinMax(2.93, -9, -43, 3.0, 7.0, -31, { kind: K.CORAL, color: PAL.coral });
   // L'angle corail se voit de loin depuis le départ
   A.boxMinMax(2.93, -9, -31.0, 4.4, 6.38, -30.895, { kind: K.CORAL, color: PAL.coral });
+  // couvertine de zinc sur l'angle, qui déborde un peu et goutte
+  A.boxMinMax(2.9, 6.38, -31.02, 4.43, 6.43, -30.865, { kind: K.METAL, color: PAL.zinc, bevel: 0.01 });
+  // Bandeaux corail en léger relief sous le niveau de la terrasse, hors de portée des
+  // mains : on les voit filer en franchissant le vide
+  for (const [y0, y1] of [[1.42, 1.64], [-3.3, -3.08]]) {
+    A.boxMinMax(2.885, y0, -43, 2.93, y1, -31.0, { kind: K.CORAL, color: PAL.coralSoft });
+  }
+  // Le mur a vécu : ancres de fer au-dessus de la ligne de course, descente de zinc sur l'angle
+  for (const z of [-34.6, -39.4]) tieAnchor(A, 2.93, 6.3, z, -1, 0);
+  tieAnchor(A, 3.66, 5.2, -30.895, 0, 1, 0.26);
+  downpipe(A, 4.12, -30.895, 6.25, -9, 0, 1);
   roofDress(deco, bWR, { garden: true, laundry: 0 });
   facadeDress(ctx, bWR, '+z', { floors: 4, balcony: 0, flowers: 0.35, ivy: 1, ivyRange: [0.55, 0.85], minY: -10 });
   // Colonne de pierre élancée, côté gauche
   B({ minX: -5.3, maxX: -3.9, minZ: -37.7, maxZ: -36.3, top: 5.5, plain: true, sideKind: K.STONE, color: PAL.stone, corniceOver: 0.12 });
-  cypress(deco, -4.6, 5.5, -37.0, { h: 3.2, r: 0.5 });
+  // ... coiffée d'une vasque fleurie dont les rameaux retombent (l'ancien cyprès est
+  // encore tiré, puis jeté, pour que la suite du décor garde sa place)
+  cypress({ ...deco, arch: new Batch(), foliage: new Batch() }, -4.6, 5.5, -37.0, { h: 3.2, r: 0.5 });
+  {
+    const uctx = { ...deco, rand: rng(23) };
+    A.cylinder(-4.6, 5.5, -37.0, 0.26, 0.34, 0.14, 14, { kind: K.STONE, color: PAL.coping, caps: true });
+    A.cylinder(-4.6, 5.64, -37.0, 0.12, 0.16, 0.12, 12, { kind: K.STONE, color: PAL.coping });
+    A.cylinder(-4.6, 5.76, -37.0, 0.52, 0.2, 0.46, 16, { kind: K.TERRA, color: PAL.terra, caps: false });
+    A.cylinder(-4.6, 6.2, -37.0, 0.56, 0.56, 0.06, 16, { kind: K.TERRA, color: 0xc97f63, caps: false });
+    A.cylinder(-4.6, 6.18, -37.0, 0.52, 0.52, 0.02, 16, { kind: K.SOIL, color: 0x6b5444 });
+    bush(uctx, -4.6, 6.12, -37.0, { r: 0.62, kind: 'leaf', flowers: [0xf4a3b5, 0xe48fa0, 0xfaf3ff] });
+    ivy(uctx, -4.6, 6.24, -36.48, 0.8, 1.3, 0, 1, { over: 0.15, flowers: [0xf4a3b5] });
+    ivy(uctx, -4.08, 6.24, -37.0, 0.7, 1.0, 1, 0, { over: 0.15 });
+  }
 
   // =====================================================================
   // E : terrasse de la pergola (glissade), puis mur d'escalade
@@ -141,10 +173,10 @@ export function buildLevel(scene, physics, materials) {
   {
     const yb = 3.25;
     for (const [px, pz] of [[-3.85, -46.6], [2.85, -46.6], [-3.85, -49.4], [2.85, -49.4]]) {
-      A.box(px, 2.0 + (yb - 2.0) / 2, pz, 0.3, yb - 2.0, 0.3, { kind: K.WOOD, color: PAL.woodDark });
+      A.box(px, 2.0 + (yb - 2.0) / 2, pz, 0.3, yb - 2.0, 0.3, { kind: K.WOOD, color: PAL.woodDark, bevel: 0.025, skipBottom: true });
       ctx.solid([px - 0.15, 2.0, pz - 0.15], [px + 0.15, yb, pz + 0.15], 'post');
     }
-    for (const pz of [-46.6, -49.4]) A.box(-0.5, yb + 0.13, pz, 7.4, 0.26, 0.24, { kind: K.WOOD, color: PAL.woodDark });
+    for (const pz of [-46.6, -49.4]) A.box(-0.5, yb + 0.13, pz, 7.4, 0.26, 0.24, { kind: K.WOOD, color: PAL.woodDark, bevel: 0.025 });
     for (let x = -3.9; x <= 2.95; x += 0.55) A.box(x, yb + 0.35, -48, 0.09, 0.18, 4.4, { kind: K.WOOD, color: PAL.wood });
     ctx.solid([-4.1, yb, -49.6], [3.1, yb + 0.45, -46.4], 'pergola');
     A.boxMinMax(-3.7, 1.95, -50.3, 2.7, 2.012, -45.7, { kind: K.WOOD, color: PAL.woodPale });
@@ -216,6 +248,7 @@ export function buildLevel(scene, physics, materials) {
   path(ctx, -103.6, -101.2, -1.9, 6.2, H_TOP, { axis: 'x', tile: 1.0 });
   inlay(ctx, 1.75, 7.2, -97.0, -88.6, H_TOP, { kind: K.GRAVEL, color: 0xd9d0c5, h: 0.02 });
   drain(ctx, 1.25, H_TOP, -98.8);
+  shiftedSlabs(ctx, -1.58, 1.38, -101.1, -87.0, H_TOP + 0.012, { tile: 1.0, n: 3, rand: slabRand, gravel: 0 });
   // Pelouse surélevée et grand arbre en fleurs
   A.boxMinMax(-8.4, H_TOP, -98.5, -2.2, H_TOP + 0.16, -89.0, { kind: K.STONE, color: PAL.stone });
   A.boxMinMax(-8.25, H_TOP + 0.15, -98.35, -2.35, H_TOP + 0.17, -89.15, { kind: K.PLAIN, color: 0x7d9a62 });
@@ -255,8 +288,12 @@ export function buildLevel(scene, physics, materials) {
   // =====================================================================
   // I : cascade de toits qui descend vers la droite
   // =====================================================================
-  const bI1 = B({ minX: -1, maxX: 7, minZ: -114, maxZ: -107, top: 2.6, style: 0.52, color: PAL.plasterCool, deck: 'roof' });
+  const bI1 = B({ minX: -1, maxX: 7, minZ: -114, maxZ: -107, top: 2.6, style: 0.52, color: PAL.plasterCool, deck: 'roof', upstand: ['-x', '+x'] });
   railing(ctx, 6.92, -107.2, 6.92, -113.8, 2.6);
+  // Relevés en rive avant et arrière, interrompus là où l'on se reçoit et d'où l'on repart
+  upstand(A, bI1, '+z', 0.15, 3.3, 2.6);
+  upstand(A, bI1, '+z', 6.3, 7.85, 2.6);
+  upstand(A, bI1, '-z', 4.7, 7.85, 2.6);
   acUnit(ctx, -0.1, 2.6, -108.8, { collide: true, rotY: Math.PI / 2 });
   acUnit(ctx, -0.1, 2.6, -111.2, { collide: true, rotY: Math.PI / 2 });
   vent(ctx, 1.2, 2.6, -113.2);
@@ -283,7 +320,7 @@ export function buildLevel(scene, physics, materials) {
   path(ctx, 4.1, 6.7, -123.72, -117.3, 1.4, { tile: 1.0, color: 0xf0e2d4, borderColor: 0xc9a78f });
   facadeDress(ctx, bI2, '+z', { floors: 3, flowers: 0.4, balcony: 0, minY: -8 });
 
-  const bI3 = B({ minX: 5, maxX: 12, minZ: -137, maxZ: -127, top: 0.4, style: 0.44, color: PAL.plaster });
+  const bI3 = B({ minX: 5, maxX: 12, minZ: -137, maxZ: -127, top: 0.4, style: 0.44, color: PAL.plaster, deck: 'roof', upstand: ['+x'] });
   B({ minX: 3, maxX: 5, minZ: -136, maxZ: -127, top: 0.4, style: 0.44, color: PAL.plaster, cornice: false });
   hut(ctx, 10.4, 0.4, -131.5, { rotY: -Math.PI / 2, color: PAL.plasterRose, awningColor: PAL.fabrics[3] });
   acUnit(ctx, 10.7, 0.4, -135.6, { collide: true });
@@ -296,6 +333,7 @@ export function buildLevel(scene, physics, materials) {
   const bW2 = B({ minX: -3, maxX: 5, minZ: -148, maxZ: -136, top: 5.6, style: 0.64, color: PAL.plasterWarm, tag: 'wallrun', faces: ['+z', '-z', '-x'], quoins: false, corniceOver: 0.25 });
   A.boxMinMax(5.0, -9, -148, 5.07, 5.6, -136, { kind: K.CORAL, color: PAL.coral });
   A.boxMinMax(3.6, -9, -136.0, 5.07, 4.98, -135.92, { kind: K.CORAL, color: PAL.coral });
+  A.boxMinMax(3.57, 4.98, -136.02, 5.1, 5.03, -135.89, { kind: K.METAL, color: PAL.zinc, bevel: 0.01 });
   roofDress(deco, bW2, { garden: true });
   facadeDress(ctx, bW2, '+z', { floors: 3, balcony: 0, flowers: 0.3, ivy: 1, ivyRange: [0.2, 0.5], minY: -8 });
 
@@ -310,8 +348,8 @@ export function buildLevel(scene, physics, materials) {
   roofDress(deco, bKL, { garden: true, laundry: 0, parapet: false });
   hedge(deco, 4.15, -171.6, 4.95, -148.4, 2.6, { h: 0.85 });
   for (const z of [-156.6, -163.6, -170.4]) {
-    A.boxMinMax(5.0, K_TOP, z - 0.3, 5.34, 2.05, z + 0.3, { kind: K.STONE, color: 0xddcbb8 });
-    A.boxMinMax(5.0, 2.05, z - 0.34, 5.24, 2.32, z + 0.34, { kind: K.STONE, color: PAL.coping });
+    A.boxMinMax(5.0, K_TOP, z - 0.3, 5.34, 2.05, z + 0.3, { kind: K.STONE, color: 0xddcbb8, bevel: 0.03, skipBottom: true });
+    A.boxMinMax(5.0, 2.05, z - 0.34, 5.24, 2.32, z + 0.34, { kind: K.STONE, color: PAL.coping, bevel: 0.025 });
     shadows.add(5.17, z, 1.2, 1.3, K_TOP, 0.9);
   }
   {
@@ -342,10 +380,14 @@ export function buildLevel(scene, physics, materials) {
   inlay(ctx, 5.0, 5.36, -171.8, -147.2, K_TOP, { kind: K.STONE, color: PAL.stoneWarm, h: 0.05 });
   inlay(ctx, 12.64, 13.0, -171.8, -147.2, K_TOP, { kind: K.STONE, color: PAL.stoneWarm, h: 0.05 });
   drain(ctx, 6.1, K_TOP, -158.4);
+  shiftedSlabs(ctx, 5.4, 12.6, -171.5, -147.5, K_TOP, { tile: 0.1, n: 14, rand: slabRand, color: 0xe8c6ae, gravel: 0.35 });
   drain(ctx, 11.0, K_TOP, -163.8);
   // Obstacle 1 : jardinière de pierre à franchir
-  A.boxMinMax(6.0, K_TOP, -153.8, 12.0, K_TOP + 0.84, -153.0, { kind: K.STONE, color: PAL.stone });
-  A.boxMinMax(5.95, K_TOP + 0.84, -153.85, 12.05, K_TOP + 0.9, -152.95, { kind: K.CORAL, color: PAL.coral });
+  // jardinière appareillée en vrais blocs (joints en V lisibles même à contre-jour)
+  const stoneRand = rng(91);
+  blockWall(A, 6.0, K_TOP, -153.8, 12.0, K_TOP + 0.84, -153.0, { rows: 2, block: 1.25, rand: stoneRand });
+  shadows.add(9.0, -153.4, 6.6, 1.5, K_TOP, 0.95);
+  A.boxMinMax(5.95, K_TOP + 0.84, -153.85, 12.05, K_TOP + 0.9, -152.95, { kind: K.CORAL, color: PAL.coral, bevel: 0.018 });
   ctx.solid([6.0, K_TOP, -153.8], [12.0, K_TOP + 0.9, -153.0], 'vault');
   for (const x of [5.5, 12.5]) {
     pot(ctx, x, K_TOP, -153.4, { r: 0.32, collide: true });
@@ -354,7 +396,7 @@ export function buildLevel(scene, physics, materials) {
   // Obstacle 2 : poutre basse drapée (glissade)
   {
     const z0 = -161.5, z1 = -160.0, yb = K_TOP + 1.25;
-    A.boxMinMax(5.0, yb, z0, 13.0, yb + 0.4, z1, { kind: K.WOOD, color: PAL.wood });
+    A.boxMinMax(5.0, yb, z0, 13.0, yb + 0.4, z1, { kind: K.WOOD, color: PAL.wood, bevel: 0.03 });
     ctx.solid([5.0, yb, z0], [13.0, yb + 0.4, z1], 'beam');
     for (const x of [5.15, 12.85]) {
       A.boxMinMax(x - 0.15, K_TOP, z0 + 0.45, x + 0.15, yb, z1 - 0.45, { kind: K.WOOD, color: PAL.woodDark });
@@ -370,8 +412,9 @@ export function buildLevel(scene, physics, materials) {
     }
   }
   // Obstacle 3 : banc-jardinière bas
-  A.boxMinMax(6.5, K_TOP, -166.6, 11.0, K_TOP + 0.56, -166.0, { kind: K.STONE, color: PAL.stone });
-  A.boxMinMax(6.45, K_TOP + 0.56, -166.65, 11.05, K_TOP + 0.62, -165.95, { kind: K.CORAL, color: PAL.coral });
+  blockWall(A, 6.5, K_TOP, -166.6, 11.0, K_TOP + 0.56, -166.0, { rows: 1, block: 0.95, rand: stoneRand });
+  shadows.add(8.75, -166.3, 5.1, 1.3, K_TOP, 0.9);
+  A.boxMinMax(6.45, K_TOP + 0.56, -166.65, 11.05, K_TOP + 0.62, -165.95, { kind: K.CORAL, color: PAL.coral, bevel: 0.018 });
   ctx.solid([6.5, K_TOP, -166.6], [11.0, K_TOP + 0.62, -166.0], 'vault');
   crate(ctx, 12.3, K_TOP, -158.0, 0.6);
   crate(ctx, 12.35, K_TOP + 0.6, -158.05, 0.45, { rotY: 0.4 });
@@ -391,25 +434,25 @@ export function buildLevel(scene, physics, materials) {
   for (let k = 1; k <= 6; k++) {
     const zf = -174.5 - 0.6 * (k - 1);
     const top = M_TOP + 0.3 * k;
-    A.boxMinMax(6.0, M_TOP, -180, 11.0, top, zf, { kind: K.STONE, color: k % 2 ? PAL.stone : PAL.stoneWarm });
+    A.boxMinMax(6.0, M_TOP, -180, 11.0, top, zf, { kind: K.STONE, color: k % 2 ? PAL.stone : PAL.stoneWarm, bevel: 0.022, skipBottom: true });
     ctx.solid([6.0, M_TOP, -180], [11.0, top, zf], 'stairs');
   }
   for (const x of [5.85, 11.15]) {
-    A.boxMinMax(x - 0.15, M_TOP, -180, x + 0.15, M_TOP + 2.35, -177.6, { kind: K.PLASTER, color: PAL.plaster });
-    A.boxMinMax(x - 0.15, M_TOP, -177.6, x + 0.15, M_TOP + 1.2, -174.5, { kind: K.PLASTER, color: PAL.plaster });
+    A.boxMinMax(x - 0.15, M_TOP, -180, x + 0.15, M_TOP + 2.35, -177.6, { kind: K.PLASTER, color: PAL.plaster, bevel: 0.03, skipBottom: true });
+    A.boxMinMax(x - 0.15, M_TOP, -177.6, x + 0.15, M_TOP + 1.2, -174.5, { kind: K.PLASTER, color: PAL.plaster, bevel: 0.03, skipBottom: true });
     ctx.solid([x - 0.15, M_TOP, -180], [x + 0.15, M_TOP + 2.35, -174.5], 'wall');
   }
   // Portique corail au sommet des marches
   {
     const y0 = M_TOP + 1.8;
     for (const x of [6.25, 10.75]) {
-      A.box(x, y0 + 1.9, -179.55, 0.42, 3.8, 0.42, { kind: K.CORAL, color: PAL.coralSoft });
-      A.box(x, y0 + 0.1, -179.55, 0.6, 0.2, 0.6, { kind: K.STONE, color: PAL.coping });
+      A.box(x, y0 + 1.9, -179.55, 0.42, 3.8, 0.42, { kind: K.CORAL, color: PAL.coralSoft, bevel: 0.03 });
+      A.box(x, y0 + 0.1, -179.55, 0.6, 0.2, 0.6, { kind: K.STONE, color: PAL.coping, bevel: 0.03 });
       ctx.solid([x - 0.21, y0, -179.76], [x + 0.21, y0 + 3.8, -179.34], 'post');
     }
-    A.box(8.5, y0 + 3.95, -179.55, 6.2, 0.34, 0.55, { kind: K.CORAL, color: PAL.coralSoft });
-    A.box(8.5, y0 + 4.2, -179.55, 6.8, 0.18, 0.7, { kind: K.WOOD, color: PAL.woodDark });
-    A.box(8.5, y0 + 3.25, -179.55, 4.6, 0.18, 0.3, { kind: K.CORAL, color: PAL.coralSoft });
+    A.box(8.5, y0 + 3.95, -179.55, 6.2, 0.34, 0.55, { kind: K.CORAL, color: PAL.coralSoft, bevel: 0.03 });
+    A.box(8.5, y0 + 4.2, -179.55, 6.8, 0.18, 0.7, { kind: K.WOOD, color: PAL.woodDark, bevel: 0.03 });
+    A.box(8.5, y0 + 3.25, -179.55, 4.6, 0.18, 0.3, { kind: K.CORAL, color: PAL.coralSoft, bevel: 0.025 });
     A.box(8.5, y0 + 3.55, -179.5, 0.5, 0.42, 0.06, { kind: K.WOOD, color: PAL.woodDark });
   }
   for (const [x, z] of [[4.9, -173.2], [13.1, -173.2], [4.9, -179.0], [13.1, -179.0]]) {
@@ -475,18 +518,19 @@ export function buildLevel(scene, physics, materials) {
   inlay(ctx, 1.1, 4.1, -207.3, -204.3, N_TOP, { kind: K.GRAVEL, color: 0xd9d0c5, h: 0.02 });
   inlay(ctx, 12.9, 15.9, -207.1, -204.1, N_TOP, { kind: K.GRAVEL, color: 0xd9d0c5, h: 0.02 });
   inlay(ctx, 5.6, 11.4, -202.9, -197.1, N_TOP, { tile: 0.5, color: 0xeadfd2, h: 0.01 });
+  shiftedSlabs(ctx, 2.0, 15.0, -209.4, -203.4, N_TOP, { tile: 1.0, n: 5, rand: slabRand, color: 0xf3ece4 });
   for (const [px, pz] of [[6.8, -198.3], [10.2, -198.3], [6.8, -201.7], [10.2, -201.7]]) {
-    A.box(px, N_TOP + 1.6, pz, 0.32, 3.2, 0.32, { kind: K.WOOD, color: PAL.woodDark });
-    A.box(px, N_TOP + 0.08, pz, 0.5, 0.16, 0.5, { kind: K.STONE, color: PAL.coping });
+    A.box(px, N_TOP + 1.6, pz, 0.32, 3.2, 0.32, { kind: K.WOOD, color: PAL.woodDark, bevel: 0.03 });
+    A.box(px, N_TOP + 0.08, pz, 0.5, 0.16, 0.5, { kind: K.STONE, color: PAL.coping, bevel: 0.03, skipBottom: true });
     ctx.solid([px - 0.16, N_TOP, pz - 0.16], [px + 0.16, N_TOP + 3.2, pz + 0.16], 'post');
   }
-  A.box(8.5, N_TOP + 3.35, -200, 5.0, 0.3, 4.8, { kind: K.WOOD, color: PAL.wood });
-  A.box(8.5, N_TOP + 3.6, -200, 4.2, 0.22, 4.0, { kind: K.PLASTER, color: PAL.coping });
-  A.box(8.5, N_TOP + 3.8, -200, 3.2, 0.2, 3.0, { kind: K.PLASTER, color: PAL.coping });
-  A.box(8.5, N_TOP + 4.0, -200, 1.6, 0.22, 1.4, { kind: K.CORAL, color: PAL.coralSoft });
+  A.box(8.5, N_TOP + 3.35, -200, 5.0, 0.3, 4.8, { kind: K.WOOD, color: PAL.wood, bevel: 0.04 });
+  A.box(8.5, N_TOP + 3.6, -200, 4.2, 0.22, 4.0, { kind: K.PLASTER, color: PAL.coping, bevel: 0.035 });
+  A.box(8.5, N_TOP + 3.8, -200, 3.2, 0.2, 3.0, { kind: K.PLASTER, color: PAL.coping, bevel: 0.035 });
+  A.box(8.5, N_TOP + 4.0, -200, 1.6, 0.22, 1.4, { kind: K.CORAL, color: PAL.coralSoft, bevel: 0.03 });
   A.box(8.5, N_TOP + 3.12, -200, 0.12, 0.2, 0.12, { kind: K.METAL, color: PAL.metalDark });
   // Socle de pierre, lanternes suspendues aux angles du toit
-  A.boxMinMax(6.2, N_TOP, -202.3, 10.8, N_TOP + 0.14, -197.7, { kind: K.STONE, color: PAL.coping });
+  A.boxMinMax(6.2, N_TOP, -202.3, 10.8, N_TOP + 0.14, -197.7, { kind: K.STONE, color: PAL.coping, bevel: 0.03, skipBottom: true });
   ctx.solid([6.2, N_TOP, -202.3], [10.8, N_TOP + 0.14, -197.7], 'plinth');
   for (const [px, pz] of [[6.2, -197.8], [10.8, -197.8], [6.2, -202.2], [10.8, -202.2]]) {
     A.tube([px, N_TOP + 3.2, pz], [px, N_TOP + 2.75, pz], 0.01, 3, { kind: K.METAL, color: PAL.metalDark });
@@ -525,19 +569,19 @@ export function buildLevel(scene, physics, materials) {
     // droite
     { minX: 9.5, maxX: 19, minZ: -8, maxZ: 9, top: 6.5, style: 0.08, color: PAL.plaster, face: '-x', banners: 2, attic: 3.6 },
     { minX: 7.5, maxX: 18, minZ: -29, maxZ: -12, top: -3.2, style: 0.55, color: PAL.plasterSage, garden: true },
-    { minX: 14, maxX: 24, minZ: -60, maxZ: -46, top: 4.5, style: 0.37, color: PAL.plasterWarm, panel: [-57.2, -48.8, -2.3, 2.6] },
-    { minX: 13.5, maxX: 23, minZ: -42, maxZ: -31, top: -1.5, style: 0.62, color: PAL.plasterCool },
+    { minX: 14, maxX: 24, minZ: -60, maxZ: -46, top: 4.5, style: 0.37, color: PAL.plasterWarm, panel: [-57.2, -48.8, -2.3, 2.6], deck: 'roof' },
+    { minX: 13.5, maxX: 23, minZ: -42, maxZ: -31, top: -1.5, style: 0.62, color: PAL.plasterCool, deck: 'roof' },
     { minX: 6.5, maxX: 16, minZ: -85, maxZ: -64, top: 0.6, style: 0.95, color: PAL.plasterSand, garden: true },
     { minX: 12, maxX: 22, minZ: -104, maxZ: -86, top: 10.5, style: 0.18, color: PAL.plaster, face: '-x', banners: 2, attic: 3.4 },
-    { minX: 15.5, maxX: 25, minZ: -134, maxZ: -109, top: 8.5, style: 0.83, color: PAL.plasterRose, panel: [-126.6, -116.4, 0.9, 7.2] },
+    { minX: 15.5, maxX: 25, minZ: -134, maxZ: -109, top: 8.5, style: 0.83, color: PAL.plasterRose, panel: [-126.6, -116.4, 0.9, 7.2], deck: 'roof' },
     { minX: 15, maxX: 25, minZ: -190, maxZ: -175, top: 3.6, style: 0.49, color: PAL.plasterWarm, face: '-x', attic: 3.4 },
-    { minX: 20, maxX: 30, minZ: -212, maxZ: -193, top: 2.0, style: 0.74, color: PAL.plaster, bare: true },
+    { minX: 20, maxX: 30, minZ: -212, maxZ: -193, top: 2.0, style: 0.74, color: PAL.plaster, bare: true, deck: 'roof', upstand: true },
     // gauche
     { minX: -21, maxX: -11, minZ: -22, maxZ: 3, top: -2.5, style: 0.28, color: PAL.plasterRose, garden: true },
     { minX: -18, maxX: -9, minZ: -56, maxZ: -30, top: -1.0, style: 0.67, color: PAL.plasterWarm, garden: true },
-    { minX: -16, maxX: -6, minZ: -86, maxZ: -62, top: -6.0, style: 0.13, color: PAL.plaster, garden: true },
+    { minX: -16, maxX: -6, minZ: -86, maxZ: -62, top: -6.0, style: 0.13, color: PAL.plaster, deck: 'roof' },
     { minX: -23, maxX: -12.5, minZ: -106, maxZ: -86, top: 0.0, style: 0.41, color: PAL.plasterSand, garden: true },
-    { minX: -14, maxX: -4, minZ: -134, maxZ: -108, top: -4.0, style: 0.88, color: PAL.plasterCool, garden: true },
+    { minX: -14, maxX: -4, minZ: -134, maxZ: -108, top: -4.0, style: 0.88, color: PAL.plasterCool, deck: 'roof' },
     { minX: -9, maxX: 3, minZ: -189, maxZ: -174, top: 0.5, style: 0.31, color: PAL.plasterSage, garden: true },
     { minX: -14, maxX: -3, minZ: -214, maxZ: -193, top: -2.0, style: 0.59, color: PAL.plasterWarm, garden: true },
     // derrière le départ

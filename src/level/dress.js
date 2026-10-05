@@ -1,5 +1,6 @@
 import { K } from './surfaces.js';
-import { PAL, windowGrid, acUnit, waterTank, vent, chimney, antenna, hut, skylight, planter, parapet, shadeSail, banner, awning, laundry, gableRoof, dome, duct } from './props.js';
+import { rng } from './kit.js';
+import { PAL, windowGrid, acUnit, waterTank, vent, chimney, antenna, hut, skylight, planter, parapet, shadeSail, banner, awning, laundry, gableRoof, dome, duct, solarHeater } from './props.js';
 import { tree, cypress, bush, hedge, ivy } from './vegetation.js';
 
 // Habillage automatique des toits et des façades des immeubles voisins.
@@ -108,8 +109,10 @@ export function roofDress(ctx, b, o = {}) {
   // Quelques toits de tuiles et coupoles : silhouette méditerranéenne, apaisée.
   const kind = o.kind ?? (o.garden ? 'flat' : (() => {
     const r = rand();
-    if (o.allowGable !== false && r < 0.2 && W < 15 && D < 15) return 'gable';
-    if (o.allowDome !== false && r < 0.26 && W > 8 && D > 8) return 'dome';
+    // Au loin, davantage de toits de tuiles : la silhouette se découpe et la ville se réchauffe
+    const gp = far ? 0.32 : 0.2;
+    if (o.allowGable !== false && r < gp && W < 15 && D < 15) return 'gable';
+    if (o.allowDome !== false && r < gp + 0.06 && W > 8 && D > 8) return 'dome';
     return 'flat';
   })());
   if (kind === 'gable') {
@@ -134,10 +137,12 @@ export function roofDress(ctx, b, o = {}) {
   if (o.parapet !== false) {
     const h = 0.5 + rand() * 0.5;
     const pctx = { ...ctx, physics: null };
-    parapet(pctx, b.minX, b.maxZ - 0.15, b.maxX, b.maxZ - 0.15, y, { h, batch, collide: false, piers: !far });
-    parapet(pctx, b.minX, b.minZ + 0.15, b.maxX, b.minZ + 0.15, y, { h, batch, collide: false, piers: !far });
-    parapet(pctx, b.minX + 0.15, b.minZ + 0.3, b.minX + 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far });
-    parapet(pctx, b.maxX - 0.15, b.minZ + 0.3, b.maxX - 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far });
+    // Sur l'étanchéité, chaque muret a son relevé et son solin (côté toit)
+    const sk = !far && b.deck === 'roof';
+    parapet(pctx, b.minX, b.maxZ - 0.15, b.maxX, b.maxZ - 0.15, y, { h, batch, collide: false, piers: !far, skirt: sk ? -1 : 0 });
+    parapet(pctx, b.minX, b.minZ + 0.15, b.maxX, b.minZ + 0.15, y, { h, batch, collide: false, piers: !far, skirt: sk ? 1 : 0 });
+    parapet(pctx, b.minX + 0.15, b.minZ + 0.3, b.minX + 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far, skirt: sk ? 1 : 0 });
+    parapet(pctx, b.maxX - 0.15, b.minZ + 0.3, b.maxX - 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far, skirt: sk ? -1 : 0 });
   }
   const used = [];
   const free = (x, z, r) => used.every((u) => Math.hypot(u[0] - x, u[1] - z) > u[2] + r);
@@ -215,7 +220,7 @@ export function roofDress(ctx, b, o = {}) {
       place(1.6, (x, z) => {
         const top = planter(pctx, x, y, z, 1.6, 1.6, { batch, h: 0.5 });
         const r = rand();
-        if (far) bush(ctx, x, top, z, { r: 0.9, kind: r < 0.5 ? 'leaf' : 'blossom' });
+        if (far) bush(ctx, x, top, z, { r: 0.75, kind: r < 0.5 ? 'leaf' : 'blossom', flat: true });
         else if (r < 0.35) tree(pctx, x, top, z, { kind: 'blossom', scale: 0.7 + rand() * 0.3 });
         else if (r < 0.7) tree(pctx, x, top, z, { kind: rand() < 0.5 ? 'olive' : 'leaf', scale: 0.7 + rand() * 0.3, petals: false });
         else cypress(pctx, x, top, z, { h: 3.5 + rand() * 2 });
@@ -235,5 +240,17 @@ export function roofDress(ctx, b, o = {}) {
   }
   if (o.hedges && !far) {
     hedge(pctx, x0, z0, x1, z0 + 0.7, y, { h: 0.7 });
+  }
+  // Chauffe-eau solaires, capteurs tournés vers le soleil (tirage à part, en dernier :
+  // le reste du toit ne bouge pas)
+  if (o.solar !== false && area > 30) {
+    const lr = rng(Math.floor(Math.abs(b.minX * 73.1 + b.minZ * 19.7 + y * 5.3)) + 3);
+    if (lr() < (far ? 0.3 : 0.4)) {
+      for (let t = 0; t < 4; t++) {
+        const r = 1.6;
+        const x = x0 + r + lr() * Math.max(0.01, W - 2 * r), z = z0 + r + lr() * Math.max(0.01, D - 2 * r);
+        if (free(x, z, r)) { used.push([x, z, r]); solarHeater(pctx, x, y, z, { batch, rotY: -2.03 }); break; }
+      }
+    }
   }
 }
