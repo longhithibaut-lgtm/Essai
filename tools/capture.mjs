@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Capture automatique d'Aube dans Chromium (sans écran, WebGL logiciel).
 //
-//   node tools/capture.mjs [--root .] [--out .captures/latest] [--only views,route,frames,ui,perf]
+//   node tools/capture.mjs [--root .] [--out .captures/latest] [--only views,route,frames,ui,perf] [--gpu]
 //
 // Produit : views/*.png (points de vue fixes), route.json (le pilote automatique
 // termine-t-il le parcours ?), frames/*.png (séquences de mouvement), ui/*.png,
@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..');
@@ -122,7 +123,7 @@ function montage(files, dest, tile = '5x2', labels = null) {
 
 // Une seule capture à la fois sur la machine : plusieurs Chromium en rendu
 // logiciel en parallèle font grimper la mémoire jusqu'à faire tomber le conteneur.
-const LOCK = '/tmp/aube-capture.lock';
+const LOCK = path.join(os.tmpdir(), 'aube-capture.lock');
 let lockHeld = false;
 async function acquireLock() {
   if (process.argv.includes('--no-lock')) return;
@@ -167,7 +168,12 @@ async function main() {
   const server = await serve(root);
   const port = server.address().port;
   const base = `http://127.0.0.1:${port}/`;
-  const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
+  // --gpu : vraie carte graphique (fenêtre visible), pour une machine qui en a une.
+  // Sinon : rendu logiciel SwiftShader, sans écran.
+  const gpu = process.argv.includes('--gpu');
+  const browser = await chromium.launch(gpu
+    ? { headless: false, args: ['--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] }
+    : { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
   const errors = [];
   const summary = { root, out, size: [W, H] };
 
