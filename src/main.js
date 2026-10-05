@@ -9,6 +9,7 @@ import { Audio } from './audio.js';
 import { UI } from './ui.js';
 import { createMaterials } from './materials.js';
 import { installTestAPI } from './testapi.js';
+import { createFpsMeter } from './fps.js';
 import { Birds } from './birds.js';
 
 const TEST = new URLSearchParams(location.search).has('test');
@@ -295,11 +296,14 @@ if (TEST) {
   installTestAPI(game);
 } else {
   game.ui.ready();
+  const fps = createFpsMeter(game.r.renderer);
   let last = performance.now();
   const loop = (now) => {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
+    fps?.begin();
     game.frame(dt);
+    fps?.end(now);
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
