@@ -182,6 +182,7 @@ export function buildLevel(scene, physics, materials) {
   chimney(ctx, -3.3, 5.6, -55.0);
   railing(ctx, -3.92, -54.2, -3.92, -57.6, 5.6);
   hatch(ctx, 2.2, 5.6, -56.7, 0.9, 0.9);
+  path(ctx, -1.0, 1.6, -59.72, -54.3, 5.6, { tile: 1.0, color: 0xf3e6df, borderColor: 0xd99a86 });
   drain(ctx, -2.2, 5.6, -56.4);
   edgeMark(ctx, -0.7, 2.3, -60, -59.75, 5.6);
 
@@ -265,6 +266,8 @@ export function buildLevel(scene, physics, materials) {
   ctx.solid([0.7, 2.6, -112.6], [1.2, 3.35, -107.5], 'duct');
   edgeMark(ctx, 2.6, 6.2, -114, -113.75, 2.6);
   facadeDress(ctx, bI1, '+z', { floors: 3, flowers: 0.4, balcony: 0, minY: -6 });
+  // Caillebotis de bois posé sur l'étanchéité, jusqu'à l'appel
+  inlay(ctx, 3.0, 5.0, -113.72, -107.25, 2.6, { kind: K.WOOD, color: PAL.woodPale, h: 0.05 });
   skylight(ctx, 5.85, 2.6, -108.3, 1.1, 1.5);
   skylight(ctx, 5.85, 2.6, -110.5, 1.1, 1.5);
   pipes(ctx, [6.62, -107.3], [6.62, -113.6], 2.6);
@@ -277,6 +280,7 @@ export function buildLevel(scene, physics, materials) {
   pot(ctx, 1.6, 1.4, -117.6, { r: 0.3, collide: true });
   bush(deco, 1.6, 1.9, -117.6, { r: 0.4, kind: 'leaf', flowers: FLOWERS });
   edgeMark(ctx, 3.8, 7.0, -124, -123.75, 1.4);
+  path(ctx, 4.1, 6.7, -123.72, -117.3, 1.4, { tile: 1.0, color: 0xf0e2d4, borderColor: 0xc9a78f });
   facadeDress(ctx, bI2, '+z', { floors: 3, flowers: 0.4, balcony: 0, minY: -8 });
 
   const bI3 = B({ minX: 5, maxX: 12, minZ: -137, maxZ: -127, top: 0.4, style: 0.44, color: PAL.plaster });
@@ -284,6 +288,7 @@ export function buildLevel(scene, physics, materials) {
   hut(ctx, 10.4, 0.4, -131.5, { rotY: -Math.PI / 2, color: PAL.plasterRose, awningColor: PAL.fabrics[3] });
   acUnit(ctx, 10.7, 0.4, -135.6, { collide: true });
   planter(ctx, 3.7, 0.4, -128.2, 1.0, 1.6, { h: 0.5 });
+  path(ctx, 4.35, 6.55, -136.8, -129.2, 0.4, { tile: 1.0 });
   bush(deco, 3.7, 0.9, -128.2, { r: 0.55, kind: 'hedge', flowers: FLOWERS });
   facadeDress(ctx, bI3, '+z', { floors: 3, flowers: 0.35, balcony: 0, minY: -10 });
 
