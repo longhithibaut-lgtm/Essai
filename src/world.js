@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ATMO, ATMO_GLSL, NOISE_GLSL, installAtmosphereFog } from './atmosphere.js';
+import { ATMO, ATMO_GLSL, NOISE_GLSL, CLOUDSEA_GLSL, installAtmosphereFog } from './atmosphere.js';
 import { AubeMaterial, MATERIAL_TIME, MATERIAL_CLOUDS } from './materials.js';
 
 // Ciel, lumière, mer de nuages, silhouette lointaine et pollen.
@@ -73,7 +73,7 @@ function domes(u, v, N, s) {
   return best;
 }
 
-export const CLOUD_GRAD_SCALE = 24; // pente stockée = dh/dtexel * échelle
+export const CLOUD_GRAD_SCALE = ATMO.cloudGradScale; // pente stockée = dh/dtexel * échelle
 
 function makeCloudTexture(S = 256) {
   const H = new Float32Array(S * S);
@@ -135,9 +135,11 @@ const SKY_GLSL = /* glsl */ `
     float a = aubeSunSide(rd);
     float aa = a * a * (3.0 - 2.0 * a);
     vec3 hor = aubeHorizon(rd);
-    vec3 upper = mix(AUBE_UPPER_COOL, AUBE_UPPER_WARM, aa);
-    vec3 col = mix(hor, upper, smoothstep(0.0, 0.3, h));
-    col = mix(col, AUBE_ZENITH, smoothstep(0.12, 0.8, h));
+    // Le chaud ne monte qu'au-dessus du soleil ; ailleurs le ciel passe vite au bleu
+    // (un mélange pêche + bleu donnerait un violet grisé, voilé).
+    vec3 upper = aubeMixSq(AUBE_UPPER_COOL, AUBE_UPPER_WARM, aa * aa * aa);
+    vec3 col = aubeMixSq(hor, upper, smoothstep(0.0, 0.26, h));
+    col = aubeMixSq(col, AUBE_ZENITH, smoothstep(0.12, 0.75, h));
     // Ombre de la Terre : bande bleutée juste au-dessus de l'horizon, à l'opposé du soleil.
     float es = (1.0 - aa) * (1.0 - smoothstep(0.0, 0.09, h)) * smoothstep(-0.03, 0.012, h);
     col = mix(col, AUBE_EARTH_SHADOW, es * 0.45);
@@ -180,7 +182,7 @@ const SKY_GLSL = /* glsl */ `
       cov *= smoothstep(0.015, 0.16, h) * (1.0 - smoothstep(0.45, 0.85, h));
       // Voiles étirés (cirrus) plus haut.
       float ci = texture2D(tCloud, vec2(suv.x * 0.05, suv.y * 0.22) + wind * 0.7 + 0.5).a;
-      float cir = smoothstep(0.55, 0.8, ci) * smoothstep(0.05, 0.3, h) * (1.0 - smoothstep(0.6, 1.0, h)) * 0.45;
+      float cir = smoothstep(0.55, 0.8, ci) * smoothstep(0.05, 0.3, h) * (1.0 - smoothstep(0.6, 1.0, h)) * 0.3;
       float s = max(dot(rd, AUBE_SUN_DIR), 0.0);
       // Éclairage : la face tournée vers le soleil s'allume, le cœur épais reste lavande.
       vec2 uvs = uv1 + sdir * 0.022;
@@ -188,21 +190,22 @@ const SKY_GLSL = /* glsl */ `
       float lit = clamp(0.5 + (n * 0.8 + nd * 0.3 - ns) * 6.0, 0.0, 1.0);
       float thick = smoothstep(0.64, 0.86, dens);
       vec3 shade = mix(AUBE_UPPER_COOL * 0.88, AUBE_EARTH_SHADOW, 0.35);
-      vec3 litc = mix(vec3(1.0, 0.87, 0.85), AUBE_HOR_WARM * 1.18, aa);
+      vec3 litc = mix(vec3(1.0, 0.93, 0.86), AUBE_HOR_WARM * 1.18, aa);
       vec3 cc = mix(shade, litc, lit * (1.0 - thick * 0.45));
       cc += AUBE_SUN * pow(s, 6.0) * 0.8 * (1.0 - cov * 0.5);
-      col = mix(col, cc, cov * 0.84);
+      col = aubeMixSq(col, cc, cov * 0.84);
       // Liseré lumineux sur les bords minces, près du soleil.
       float rim = cov * (1.0 - smoothstep(0.35, 0.9, cov));
       col += AUBE_SUN * (pow(s, 4.0) * 0.7 + aa * 0.08) * rim;
-      col = mix(col, mix(litc, AUBE_SUN, 0.3) * 1.05, cir * (1.0 - cov));
+      col = aubeMixSq(col, mix(litc, AUBE_SUN, 0.3) * 1.05, cir * (1.0 - cov));
       cloudMask = cov;
     }
 
     // Soleil : halo large, couronne, disque.
     float s = max(dot(rd, AUBE_SUN_DIR), 0.0);
     float occl = 1.0 - cloudMask * 0.7;
-    col += AUBE_SUN * (pow(s, 6.0) * 0.14 + pow(s, 28.0) * 0.3 + pow(s, 260.0) * 1.3 * occl);
+    // Halo large et doré, couronne qui monte jusqu'au blanc, puis le disque.
+    col += AUBE_SUN * (pow(s, 4.0) * 0.1 + pow(s, 16.0) * 0.26 + pow(s, 70.0) * 0.55 * occl + pow(s, 420.0) * 2.2 * occl);
     float disc = smoothstep(0.99975, 0.99988, s);
     col += AUBE_SUN_DISC * disc * mix(24.0, 3.0, uEnv) * occl;
     return col;
@@ -237,12 +240,18 @@ function skyMaterial(cloudTex, env = false) {
         if (uEnv > 0.5) {
           // Éclairage d'ambiance : en haut le bleu-lavande du ciel (ombres fraîches et
           // nettement plus sombres que le soleil), en bas un rebond tiède et faible.
+          // Très directionnel : les ombres tournées vers le soleil se réchauffent,
+          // celles qui lui tournent le dos restent fraîches et plus sombres.
+          // Le zénith éclaire plus que l'horizon : les sols à l'ombre restent clairs,
+          // les murs (qui ne voient que la moitié basse du ciel) s'assombrissent, et
+          // plus encore ceux qui tournent le dos au soleil : les volumes se découpent.
           float side = aubeSunSide(rd);
-          vec3 up = AUBE_AMB_SKY * mix(1.0, 0.82, smoothstep(0.0, 0.7, rd.y));
-          up = mix(up, AUBE_HOR_WARM * 0.9, side * side * (1.0 - smoothstep(0.0, 0.35, rd.y)) * 0.45);
-          col = mix(col, up, 0.8);
-          // En bas : surtout du lavande (rues à l'ombre, mer de nuages), un peu de tiède côté soleil.
-          vec3 below = mix(AUBE_AMB_SKY * 0.42, AUBE_AMB_GROUND * 0.5, 0.25 + 0.35 * side);
+          float lowk = 1.0 - smoothstep(0.0, 0.45, rd.y);
+          vec3 up = AUBE_AMB_SKY * mix(0.72, 1.18, smoothstep(0.0, 0.8, rd.y)) * mix(0.36, 1.0, side * side * (3.0 - 2.0 * side));
+          up = mix(up, AUBE_HOR_WARM, side * side * lowk * 0.38);
+          col = mix(col, up, 0.82);
+          // En bas : surtout du bleu ardoise (rues à l'ombre, mer de nuages), un peu de tiède côté soleil.
+          vec3 below = mix(AUBE_AMB_SKY * 0.2, AUBE_AMB_GROUND * 0.34, 0.2 + 0.4 * side);
           col = mix(col, below, smoothstep(0.02, -0.12, rd.y));
         }
         gl_FragColor = vec4(col, 1.0);
@@ -252,16 +261,15 @@ function skyMaterial(cloudTex, env = false) {
 }
 
 // ---------- Lumière ----------
-const SUN_INTENSITY = 10;
-const ENV_INTENSITY = 0.26; // ciel filtré (ombres)
+const SUN_INTENSITY = 15;
+const CLOUD_SHADOW = 0.45; // part de soleil retirée sous une ombre de nuage
+const ENV_INTENSITY = 0.72; // ciel filtré : ombres claires et bleues (les vrais sombres viennent de l'occlusion)
 const SHADOW_MAP = 4096;
 const SHADOW_HALF = 52; // demi-côté de la carte d'ombre (m)
 const SHADOW_AHEAD = 30; // décalage du centre devant la caméra (m)
 
 // ---------- Mer de nuages ----------
-const CLOUD_TILE_A = 520; // mètres par motif, grande échelle
-const CLOUD_TILE_B = 150; // détail
-const CLOUD_AMP = 26; // hauteur des cumulus au-dessus du plan
+const CLOUD_AMP = ATMO.cloudAmp; // hauteur des cumulus au-dessus du plan (motifs : ATMO.cloudTileA/B)
 
 export class World {
   constructor(scene) {
@@ -318,7 +326,7 @@ export class World {
     // Le ciel (environnement filtré, voir buildEnvScene) éclaire les ombres en
     // bleu-lavande ; le soleil, seul, réchauffe. Un rebond tiède très léger
     // remonte des terrasses claires sous les avancées.
-    const bounce = new THREE.HemisphereLight(0x000000, 0xffcfb0, 0.14);
+    const bounce = new THREE.HemisphereLight(0x000000, 0xffcfb0, 0.08);
     this.scene.add(bounce);
     this.bounce = bounce;
 
@@ -352,9 +360,6 @@ export class World {
         tCloud: { value: this.cloudTex },
         uTime: { value: 0 },
         uCam: { value: new THREE.Vector3() },
-        uLit: { value: ATMO.cloudLit },
-        uShade: { value: ATMO.cloudShade },
-        uDeep: { value: ATMO.cloudDeep },
       },
       vertexShader: /* glsl */ `
         varying vec3 vWorld;
@@ -367,19 +372,12 @@ export class World {
       fragmentShader: /* glsl */ `
         uniform sampler2D tCloud;
         uniform float uTime;
-        uniform vec3 uCam, uLit, uShade, uDeep;
+        uniform vec3 uCam;
         varying vec3 vWorld;
         ${ATMO_GLSL}
+        ${CLOUDSEA_GLSL}
         const float AMP = ${CLOUD_AMP.toFixed(1)};
-        const float TA = ${CLOUD_TILE_A.toFixed(1)};
-        const float TB = ${CLOUD_TILE_B.toFixed(1)};
-        const float GS = ${CLOUD_GRAD_SCALE.toFixed(1)};
-        vec2 windA() { return vec2(uTime * 0.55, uTime * 0.2); }
-        float cloudH(vec2 xz) {
-          float a = texture2D(tCloud, (xz + windA()) / TA).r;
-          float b = texture2D(tCloud, (xz + windA() * 1.7) / TB + 0.37).r;
-          return a * 0.84 + b * 0.16;
-        }
+        float cloudH(vec2 xz) { return aubeCloudH(tCloud, xz, uTime); }
         void main() {
           vec3 rd = normalize(vWorld - uCam);
           float ry = min(rd.y, -0.015);
@@ -410,38 +408,9 @@ export class World {
             hPrev = hh;
           }
           if (hit > 0.5) { p = vWorld.xz; hs = cloudH(p); }
-
-          // Pente (précalculée dans la texture) des deux échelles.
-          vec2 ga = texture2D(tCloud, (p + windA()) / TA).gb * 2.0 - 1.0;
-          vec2 gb = texture2D(tCloud, (p + windA() * 1.7) / TB + 0.37).gb * 2.0 - 1.0;
-          float texA = TA / 256.0, texB = TB / 256.0;
-          vec2 grad = ga / GS * 0.84 * AMP / texA + gb / GS * 0.16 * AMP / texB;
-          vec3 n = normalize(vec3(-grad.x, 1.0, -grad.y));
-
-          vec3 sd = AUBE_SUN_DIR;
-          float ndl = dot(n, sd);
-          float wrap = clamp((ndl + 0.2) / 1.05, 0.0, 1.0);
-          wrap = wrap * wrap * (3.0 - 2.0 * wrap);
-          // Ombre portée approximative : relief plus haut en direction du soleil.
-          vec2 sxz = normalize(sd.xz);
-          float hsun = cloudH(p + sxz * 16.0);
-          float hsun2 = cloudH(p + sxz * 40.0);
-          float occ = clamp(1.0 - max(hsun - hs - 0.03, 0.0) * 3.2 - max(hsun2 - hs - 0.12, 0.0) * 1.6, 0.22, 1.0);
-          vec3 col = mix(uShade, uLit, wrap * occ);
-          // Creux plus profonds et bleutés.
-          col = mix(uDeep, col, smoothstep(0.05, 0.6, hs));
-          col *= mix(0.93, 1.06, smoothstep(0.3, 0.9, hs));
-          // Ciel au-dessus : léger apport bleuté sur les faces tournées vers le haut.
-          col += AUBE_ZENITH * 0.06 * n.y;
-          // Diffusion vers l'avant : bords lumineux à contre-jour.
-          float fs = max(dot(rd, sd), 0.0);
-          col += AUBE_SUN * pow(fs, 6.0) * (0.18 + 0.55 * (1.0 - hs)) * (0.6 + 0.4 * occ);
-
+          vec3 col = aubeCloudColor(tCloud, p, hs, uTime, rd);
           vec3 surf = vec3(p.x, vWorld.y + hs * AMP, p.y);
-          float dist = length(surf - uCam);
-          float fd = dist * AUBE_HAZE * 0.9 + aubeFogDepth(uCam, rd, dist) * 0.05;
-          float fogAmt = 1.0 - exp(-fd);
-          col = mix(col, aubeFogColor(rd), fogAmt);
+          col = aubeCloudFog(col, uCam, rd, length(surf - uCam));
           gl_FragColor = vec4(col, 1.0);
         }
       `,
@@ -455,33 +424,64 @@ export class World {
     this.scene.add(clouds);
   }
 
-  // Ville lointaine : tours de pierre claire avec corniches, pavillons et jardins.
+  // Ville lointaine : tours claires avec corniches, retraits, bandeaux, édicules et
+  // jardins de toit. Tout est une seule boîte instanciée (un appel de dessin) plus les
+  // houppiers des jardins (un second appel) ; le shader « tower » dessine les baies.
+  // La suite de rng(7) n'est pas modifiée (le plan de titre cadre ces tours) : les
+  // détails ajoutés tirent leurs nombres d'un second générateur.
   _distantTowers() {
     const rand = rng(7);
-    const boxes = []; // [x, y, z, w, h, d, rotY, tint]
+    const det = rng(77);
+    const boxes = []; // [x, y, z, w, h, d, rotY, tint, winTop, style]
     const puffs = []; // [x, y, z, r, tint]
     const center = new THREE.Vector2(0, -50);
     const avoid = (x, z) => Math.abs(x) < 20 && z > -128 && z < 26;
+    const NOWIN = -999;
+    const CORNICE = 0xfbf5ee, LEDGE = 0xf5eee6, LAWN = 0x93b184, ROOFKIT = 0xd9d4d2;
 
-    const tints = [0xf4ede6, 0xf6e6dc, 0xece6ee, 0xf2ece4, 0xf7efe6];
+    // Pierre claire, sable, rose poudré, gris bleuté, salvia : une ville pâle mais variée.
+    const tints = [0xf3ebe2, 0xf1dccd, 0xe2e2ec, 0xeee3d2, 0xf7f0e7, 0xdfe7df, 0xf2dac6];
+    const roofKit = (x, z, w, d, y, rot) => {
+      // Édicules : cage d'ascenseur, réservoir, petite verrière.
+      const n = det() < 0.7 ? 1 + Math.floor(det() * 2) : 0;
+      for (let i = 0; i < n; i++) {
+        const kw = 1.6 + det() * 2.6, kd = 1.6 + det() * 2.6, kh = 1.4 + det() * 2.4;
+        const kx = x + (det() - 0.5) * Math.max(0, w - kw) * 0.8, kz = z + (det() - 0.5) * Math.max(0, d - kd) * 0.8;
+        boxes.push([kx, y, kz, kw, kh, kd, rot, ROOFKIT, NOWIN, 0]);
+      }
+    };
     const addTower = (x, z, w, d, top, opts = {}) => {
       const rot = (rand() - 0.5) * 0.25;
       const tint = tints[Math.floor(rand() * tints.length)];
       const bottom = -75;
-      boxes.push([x, bottom, z, w, top - bottom, d, rot, tint, top - 2.2 - Math.floor(rand() * 2) * 4.2]);
+      const style = det();
+      boxes.push([x, bottom, z, w, top - bottom, d, rot, tint, top - 2.2 - Math.floor(rand() * 2) * 4.2, style]);
       // Corniche
-      boxes.push([x, top - 0.1, z, w + 0.9, 0.7, d + 0.9, rot, 0xfaf4ee]);
+      boxes.push([x, top - 0.1, z, w + 0.9, 0.7, d + 0.9, rot, CORNICE, NOWIN, 0]);
+      // Bandeaux horizontaux qui ceinturent le fût au-dessus des nuages.
+      if (det() < 0.65) {
+        const nb = 1 + Math.floor(det() * 2);
+        for (let i = 0; i < nb; i++) {
+          const y = top - 7.5 - (i + det() * 0.6) * (5 + det() * 6);
+          if (y > -16) boxes.push([x, y, z, w + 0.55, 0.42, d + 0.55, rot, LEDGE, NOWIN, 0]);
+        }
+      }
+      let roofY = top + 0.6;
       // Ressaut / pavillon
       if (opts.setback ?? rand() < 0.55) {
         const sw = w * (0.4 + rand() * 0.3), sd = d * (0.4 + rand() * 0.3);
         const sh = 2.5 + rand() * 6;
         const ox = (rand() - 0.5) * (w - sw) * 0.8, oz = (rand() - 0.5) * (d - sd) * 0.8;
-        boxes.push([x + ox, top + 0.6, z + oz, sw, sh, sd, rot, tint]);
-        boxes.push([x + ox, top + 0.6 + sh - 0.05, z + oz, sw + 0.6, 0.45, sd + 0.6, rot, 0xfaf4ee]);
+        boxes.push([x + ox, top + 0.6, z + oz, sw, sh, sd, rot, tint, top + 0.6 + sh - 1.3, det()]);
+        boxes.push([x + ox, top + 0.6 + sh - 0.05, z + oz, sw + 0.6, 0.45, sd + 0.6, rot, CORNICE, NOWIN, 0]);
+        roofKit(x + ox, z + oz, sw, sd, top + 0.6 + sh + 0.4, rot);
+      } else {
+        roofKit(x, z, w, d, roofY, rot);
       }
-      // Jardin suspendu : arbres en fleurs sur la terrasse.
+      // Jardin suspendu : pelouse et arbres en fleurs sur la terrasse.
       if (opts.garden ?? rand() < 0.6) {
         const n = 2 + Math.floor(rand() * 4);
+        boxes.push([x, roofY - 0.05, z, w * 0.82, 0.32, d * 0.82, rot, LAWN, NOWIN, 0]);
         for (let i = 0; i < n; i++) {
           const px = x + (rand() - 0.5) * w * 0.8, pz = z + (rand() - 0.5) * d * 0.8;
           const r = 1.1 + rand() * 1.6;
@@ -511,7 +511,8 @@ export class World {
       const x = center.x + Math.cos(a) * r, z = center.y + Math.sin(a) * r * 0.9 - 40;
       if (avoid(x, z)) continue;
       const w = 8 + rand() * 18, d = 8 + rand() * 18;
-      addTower(x, z, w, d, -10 + rand() * 36, { garden: rand() < 0.4 });
+      // (dix mètres plus hautes qu'avant : la mer de nuages a du relief et les engloutissait)
+      addTower(x, z, w, d, rand() * 36, { garden: rand() < 0.4 });
       placed++;
     }
     // Quelques flèches très hautes qui se perdent dans la lumière.
@@ -519,16 +520,80 @@ export class World {
     for (const [x, z, top] of spires) {
       const w = 9 + rand() * 7;
       addTower(x, z, w, w * (0.8 + rand() * 0.4), top, { setback: true, garden: false });
-      // Étages supérieurs en retrait successifs.
-      boxes.push([x, top + 0.5, z, w * 0.62, 14, w * 0.62, 0, 0xf6eee6]);
-      boxes.push([x, top + 14.5, z, w * 0.35, 10, w * 0.35, 0, 0xf6eee6]);
+      // Étages supérieurs en retrait successifs, avec leurs corniches.
+      boxes.push([x, top + 0.5, z, w * 0.62, 14, w * 0.62, 0, 0xf6eee6, top + 13, 0.9]);
+      boxes.push([x, top + 14.4, z, w * 0.62 + 0.5, 0.45, w * 0.62 + 0.5, 0, CORNICE, NOWIN, 0]);
+      boxes.push([x, top + 14.5, z, w * 0.35, 10, w * 0.35, 0, 0xf6eee6, top + 23, 0.2]);
+      boxes.push([x, top + 24.4, z, w * 0.35 + 0.4, 0.4, w * 0.35 + 0.4, 0, CORNICE, NOWIN, 0]);
+    }
+    // Quartier du levant : un bouquet de tours dans l'axe du plan de titre, face au
+    // soleil levant. Elles se découpent à contre-jour, liserées d'or, et donnent au
+    // plan d'ouverture une vraie ligne d'horizon (le soleil reste dégagé au centre).
+    // Tiré après tout le reste : la suite de rng(7) des tours existantes est intacte.
+    {
+      const lev = rng(23);
+      const yaw = 1.075;
+      const tcx = -222, tcz = -157.5;
+      const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+      const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+      const taken = boxes.filter((b) => b[4] > 30).map((b) => [b[0], b[2], Math.max(b[3], b[5])]);
+      const at = (D, th) => [tcx + (fx * Math.cos(th) + rx * Math.sin(th)) * D, tcz + (fz * Math.cos(th) + rz * Math.sin(th)) * D];
+      // Deux flèches qui encadrent le soleil.
+      for (const [D, th, top] of [[430, -0.3, 78], [560, 0.36, 104]]) {
+        const [x, z] = at(D, th);
+        const w = 11 + lev() * 4;
+        addTower(x, z, w, w * 0.9, top, { setback: false, garden: false });
+        boxes.push([x, top + 0.5, z, w * 0.66, 16, w * 0.6, 0, 0xf6eee6, top + 15, 0.9]);
+        boxes.push([x, top + 16.4, z, w * 0.66 + 0.5, 0.45, w * 0.6 + 0.5, 0, CORNICE, NOWIN, 0]);
+        boxes.push([x, top + 16.5, z, w * 0.36, 12, w * 0.34, 0, 0xf6eee6, top + 27, 0.2]);
+        boxes.push([x, top + 28.4, z, w * 0.36 + 0.4, 0.4, w * 0.34 + 0.4, 0, CORNICE, NOWIN, 0]);
+        boxes.push([x, top + 28.8, z, 0.5, 9, 0.5, 0, ROOFKIT, NOWIN, 0]);
+        taken.push([x, z, w]);
+      }
+      let n = 0, tries = 0;
+      while (n < 30 && tries++ < 3000) {
+        const D = 110 + Math.pow(lev(), 0.8) * 520;
+        const th = (lev() - 0.5) * 1.7;
+        if (Math.abs(th) < 0.1 + 18 / D) continue; // le soleil reste dégagé
+        const [x, z] = at(D, th);
+        if (avoid(x, z)) continue;
+        const w = 8 + lev() * 13, d = 8 + lev() * 13;
+        if (taken.some((e) => Math.hypot(e[0] - x, e[1] - z) < (e[2] + Math.max(w, d)) * 0.62)) continue;
+        // Plus hautes au loin : la ligne d'horizon monte en gradins vers le fond.
+        const top = 2 + lev() * 20 * Math.min(1, D / 260) + Math.min(1, D / 500) * lev() * 46;
+        addTower(x, z, w, d, top, { garden: lev() < 0.55 });
+        taken.push([x, z, Math.max(w, d)]);
+        n++;
+      }
+    }
+    // Horizon : une couronne de tours plus lointaines, voilées par la brume, qui donne
+    // à la ville sa profondeur (plans successifs de plus en plus pâles).
+    const far = rng(11);
+    placed = 0; guard = 0;
+    while (placed < 64 && guard++ < 3000) {
+      const a = far() * Math.PI * 2;
+      const r = 540 + far() * 420;
+      const x = center.x + Math.cos(a) * r, z = center.y + Math.sin(a) * r * 0.9 - 40;
+      const w = 12 + far() * 22, d = 12 + far() * 22;
+      const top = -4 + far() * 50 + (far() < 0.12 ? 40 : 0);
+      const rot = (far() - 0.5) * 0.3;
+      const tint = tints[Math.floor(far() * tints.length)];
+      boxes.push([x, -75, z, w, top + 75, d, rot, tint, top - 2.5, far()]);
+      boxes.push([x, top - 0.1, z, w + 1.2, 0.9, d + 1.2, rot, CORNICE, NOWIN, 0]);
+      if (far() < 0.6) {
+        const sw = w * (0.45 + far() * 0.3), sd = d * (0.45 + far() * 0.3), sh = 4 + far() * 12;
+        boxes.push([x, top + 0.8, z, sw, sh, sd, rot, tint, top + sh - 1.5, far()]);
+        boxes.push([x, top + 0.8 + sh, z, sw + 0.8, 0.6, sd + 0.8, rot, CORNICE, NOWIN, 0]);
+      }
+      placed++;
     }
 
     const boxGeo = new THREE.BoxGeometry(1, 1, 1);
     boxGeo.translate(0, 0.5, 0);
-    // Hauteur sous laquelle s'ouvrent les fenêtres (aucune sur les corniches et pavillons).
-    boxGeo.setAttribute('aWinTop', new THREE.InstancedBufferAttribute(new Float32Array(boxes.map((b) => b[8] ?? -999)), 1));
-    const towerMat = new AubeMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 }, 'facade');
+    // Par instance : hauteur sous laquelle s'ouvrent les baies, et style de façade.
+    boxGeo.setAttribute('aWinTop', new THREE.InstancedBufferAttribute(new Float32Array(boxes.map((b) => b[8] ?? NOWIN)), 1));
+    boxGeo.setAttribute('aStyle', new THREE.InstancedBufferAttribute(new Float32Array(boxes.map((b) => b[9] ?? 0)), 1));
+    const towerMat = new AubeMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0 }, 'tower');
     const mesh = new THREE.InstancedMesh(boxGeo, towerMat, boxes.length);
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -636,6 +701,9 @@ export class World {
     this.clouds.position.z = camera.position.z;
     this.pollenMat.uniforms.uTime.value = this.time;
     this.pollenMat.uniforms.uCam.value.copy(camera.position);
+    // Ombres de nuages (voir atmosphere.js) : le vent les pousse doucement.
+    const wind = this.time % 6000;
+    this.scene.fog.color.setRGB(-wind * 1.1, -wind * 0.45, CLOUD_SHADOW);
 
     // La carte d'ombre couvre ce que la caméra regarde : centrée un peu devant
     // elle, recalée au texel près dans l'espace lumière (pas de scintillement).
