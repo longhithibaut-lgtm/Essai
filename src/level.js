@@ -2,14 +2,16 @@ import * as THREE from 'three';
 import { K, createArchMaterial, createFoliageMaterial, createFabricMaterial, createWaterMaterial } from './level/surfaces.js';
 import { Batch, rng } from './level/kit.js';
 import {
-  PAL, building, parapet, railing, edgeMark, acUnit, waterTank, vent, chimney, antenna, hut, planter, bench,
-  lantern, pot, crate, cafeSet, stringLights, shadeSail, laundry, duct,
+  PAL, mixHex, building, parapet, railing, edgeMark, acUnit, waterTank, vent, chimney, antenna, hut, planter, bench,
+  lantern, pot, crate, cafeSet, stringLights, shadeSail, laundry, duct, skylight,
 } from './level/props.js';
 import { tree, cypress, bush, hedge, lavender, ivy, grass, wisteria } from './level/vegetation.js';
 import { roofDress, facadeDress } from './level/dress.js';
 import { buildCity, aqueduct } from './level/city.js';
 import { Signs } from './level/signs.js';
 import { ContactShadows } from './level/ao.js';
+import { inlay, path, drain, gutter, pipes, hatch } from './level/ground.js';
+import { junctionGrime } from './level/grime.js';
 
 // Le parcours : des terrasses blanches posées sur de hautes tours, au-dessus des
 // nuages, dans une ville calme. Le joueur avance vers -z. Collisions : boîtes alignées.
@@ -79,6 +81,15 @@ export function buildLevel(scene, physics, materials) {
   stringLights(ctx, [-3.3, 2.5, -2.9], [4.1, 2.15, -1.9], { n: 14, sag: 0.35 });
   ivy(ctx, -7.02, 0.7, -3, 3.5, 3.5, -1, 0);
   ivy(ctx, 7.02, 0.7, 1.5, 3.0, 4.0, 1, 0);
+  // Sol : allée centrale bordée de terre cuite qui mène droit à l'appel corail,
+  // platelage sous la voile, gravier sous le réservoir, regards, tuyaux, trappe.
+  path(ctx, -2.3, 2.3, -6.7, 6.7, 0, { tile: 1.0 });
+  inlay(ctx, -6.6, -3.3, -6.6, -2.35, 0, { kind: K.WOOD, color: PAL.woodPale, h: 0.04 });
+  inlay(ctx, 4.35, 6.6, -4.7, -1.95, 0, { kind: K.GRAVEL, color: 0xd6cdc2, h: 0.02 });
+  pipes(ctx, [6.42, -6.4], [6.42, -2.2], 0);
+  drain(ctx, 3.1, 0, -5.6);
+  drain(ctx, -2.95, 0, 2.9);
+  hatch(ctx, 5.2, 0, 3.6, 0.9, 0.9);
 
   // =====================================================================
   // B : premier saut, puis double franchissement
@@ -109,11 +120,13 @@ export function buildLevel(scene, physics, materials) {
   lantern(ctx, -3.3, 2.0, -31.3);
   shadeSail(ctx, [[-3.9, 4.55, -23.4], [-1.3, 4.25, -23.6], [-1.35, 4.65, -27.2], [-3.9, 4.35, -27.0]], { color: PAL.fabrics[3], posts: true, base: 2.0, collide: true });
   edgeMark(ctx, 1.6, 3.0, -32, -31.75, 2.0);
+  path(ctx, 0.3, 2.85, -31.72, -19.4, 2.0, { tile: 1.0, color: 0xefe4d8, borderColor: 0xc7b19f });
+  drain(ctx, -1.0, 2.0, -30.6);
   // Mur corail : flanc d'un immeuble blanc
-  const bWR = B({ minX: 3, maxX: 12, minZ: -43, maxZ: -31, top: 7.0, style: 0.33, color: PAL.plaster, tag: 'wallrun' });
-  A.boxMinMax(2.965, -9, -43, 3.0, 7.0, -31, { kind: K.CORAL, color: PAL.coral });
+  const bWR = B({ minX: 3, maxX: 12, minZ: -43, maxZ: -31, top: 7.0, style: 0.33, color: PAL.plaster, tag: 'wallrun', faces: ['+z', '-z', '+x'], quoins: false });
+  A.boxMinMax(2.93, -9, -43, 3.0, 7.0, -31, { kind: K.CORAL, color: PAL.coral });
   // L'angle corail se voit de loin depuis le départ
-  A.boxMinMax(2.965, -9, -31.0, 4.4, 6.38, -30.965, { kind: K.CORAL, color: PAL.coral });
+  A.boxMinMax(2.93, -9, -31.0, 4.4, 6.38, -30.895, { kind: K.CORAL, color: PAL.coral });
   roofDress(deco, bWR, { garden: true, laundry: 0 });
   facadeDress(ctx, bWR, '+z', { floors: 4, balcony: 0, flowers: 0.35, ivy: 1, ivyRange: [0.55, 0.85], minY: -10 });
   // Colonne de pierre élancée, côté gauche
@@ -156,18 +169,20 @@ export function buildLevel(scene, physics, materials) {
   bush(deco, 2.3, 2.5, -52.6, { r: 0.5, kind: 'hedge', flowers: [0xfaf3ff] });
   lantern(ctx, 2.45, 2.0, -50.7);
   // Mur d'escalade : panneau corail, lierre de part et d'autre
-  A.boxMinMax(-2.1, 2.0, -54.0, 1.1, 5.35, -53.965, { kind: K.CORAL, color: PAL.coral });
+  A.boxMinMax(-2.1, 2.0, -54.0, 1.1, 5.35, -53.93, { kind: K.CORAL, color: PAL.coral });
   ivy(ctx, -3.1, 5.9, -53.97, 1.5, 2.6, 0, 1, { flowers: [0xfaf3ff, 0xf4a3b5] });
   ivy(ctx, 2.1, 5.9, -53.97, 1.5, 2.2, 0, 1);
 
   // =====================================================================
   // F : toit au-dessus du mur
   // =====================================================================
-  B({ minX: -4, maxX: 3, minZ: -60, maxZ: -54, top: 5.6, style: 0.86, color: PAL.plasterRose, corniceColor: PAL.coralSoft });
+  B({ minX: -4, maxX: 3, minZ: -60, maxZ: -54, top: 5.6, style: 0.86, color: PAL.plasterRose, corniceColor: PAL.coralSoft, faces: ['-z', '+x', '-x'], corniceOver: 0.1 });
   acUnit(ctx, -3.0, 5.6, -58.7, { collide: true });
   vent(ctx, 2.4, 5.6, -54.7);
   chimney(ctx, -3.3, 5.6, -55.0);
   railing(ctx, -3.92, -54.2, -3.92, -57.6, 5.6);
+  hatch(ctx, 2.2, 5.6, -56.7, 0.9, 0.9);
+  drain(ctx, -2.2, 5.6, -56.4);
   edgeMark(ctx, -0.7, 2.3, -60, -59.75, 5.6);
 
   // =====================================================================
@@ -195,6 +210,11 @@ export function buildLevel(scene, physics, materials) {
   edgeMark(ctx, 1.0, 5.0, -104, -103.72, H_TOP);
   lantern(ctx, -3.0, H_TOP, -87.2);
   lantern(ctx, 3.0, H_TOP, -87.2);
+  // Allée d'honneur du jardin, puis l'allée de sortie vers la cascade
+  path(ctx, -1.9, 1.7, -101.2, -86.75, H_TOP, { tile: 1.0 });
+  path(ctx, -103.6, -101.2, -1.9, 6.2, H_TOP, { axis: 'x', tile: 1.0 });
+  inlay(ctx, 1.75, 7.2, -97.0, -88.6, H_TOP, { kind: K.GRAVEL, color: 0xd9d0c5, h: 0.02 });
+  drain(ctx, 1.25, H_TOP, -98.8);
   // Pelouse surélevée et grand arbre en fleurs
   A.boxMinMax(-8.4, H_TOP, -98.5, -2.2, H_TOP + 0.16, -89.0, { kind: K.STONE, color: PAL.stone });
   A.boxMinMax(-8.25, H_TOP + 0.15, -98.35, -2.35, H_TOP + 0.17, -89.15, { kind: K.PLAIN, color: 0x7d9a62 });
@@ -247,6 +267,10 @@ export function buildLevel(scene, physics, materials) {
   ctx.solid([0.7, 2.6, -112.6], [1.2, 3.35, -107.5], 'duct');
   edgeMark(ctx, 2.6, 6.2, -114, -113.75, 2.6);
   facadeDress(ctx, bI1, '+z', { floors: 3, flowers: 0.4, balcony: 0, minY: -6 });
+  skylight(ctx, 5.85, 2.6, -108.3, 1.1, 1.5);
+  skylight(ctx, 5.85, 2.6, -110.5, 1.1, 1.5);
+  pipes(ctx, [6.62, -107.3], [6.62, -113.6], 2.6);
+  drain(ctx, 2.0, 2.6, -108.0, 0.36);
 
   const bI2 = B({ minX: 1, maxX: 9, minZ: -124, maxZ: -117, top: 1.4, style: 0.91, color: PAL.plasterSand, tile: 0.2, deckColor: 0xe9cdb8 });
   waterTank(ctx, 7.8, 1.4, -122.6, { r: 0.8, h: 1.4, leg: 1.2, collide: true });
@@ -266,9 +290,9 @@ export function buildLevel(scene, physics, materials) {
   facadeDress(ctx, bI3, '+z', { floors: 3, flowers: 0.35, balcony: 0, minY: -10 });
 
   // Mur corail de gauche : flanc d'un immeuble
-  const bW2 = B({ minX: -3, maxX: 5, minZ: -148, maxZ: -136, top: 5.6, style: 0.64, color: PAL.plasterWarm, tag: 'wallrun' });
-  A.boxMinMax(5.0, -9, -148, 5.035, 5.6, -136, { kind: K.CORAL, color: PAL.coral });
-  A.boxMinMax(3.6, -9, -136.0, 5.035, 4.98, -135.965, { kind: K.CORAL, color: PAL.coral });
+  const bW2 = B({ minX: -3, maxX: 5, minZ: -148, maxZ: -136, top: 5.6, style: 0.64, color: PAL.plasterWarm, tag: 'wallrun', faces: ['+z', '-z', '-x'], quoins: false, corniceOver: 0.25 });
+  A.boxMinMax(5.0, -9, -148, 5.07, 5.6, -136, { kind: K.CORAL, color: PAL.coral });
+  A.boxMinMax(3.6, -9, -136.0, 5.07, 4.98, -135.92, { kind: K.CORAL, color: PAL.coral });
   roofDress(deco, bW2, { garden: true });
   facadeDress(ctx, bW2, '+z', { floors: 3, balcony: 0, flowers: 0.3, ivy: 1, ivyRange: [0.2, 0.5], minY: -8 });
 
@@ -277,9 +301,28 @@ export function buildLevel(scene, physics, materials) {
   // =====================================================================
   const K_TOP = 0.4;
   B({ minX: 5, maxX: 13, minZ: -172, maxZ: -147, top: K_TOP, style: 0.4, color: PAL.plasterWarm, tile: 0.1, deckColor: 0xe8c6ae });
-  const bKL = B({ minX: -4, maxX: 5, minZ: -172, maxZ: -148, top: 2.6, style: 0.15, color: PAL.plasterRose });
+  // Rive gauche : vieux mur de jardin en pierre, contreforts, fontaine, haie au sommet
+  const bKL = B({ minX: -4, maxX: 5, minZ: -172, maxZ: -148, top: 2.6, style: 0.15, plain: true, sideKind: K.STONE, color: 0xe4d4c2, deckColor: 0xe6dccf, corniceOver: 0.14 });
   const bKR = B({ minX: 13, maxX: 22, minZ: -172, maxZ: -147, top: 8.5, style: 0.78, color: PAL.plaster });
-  roofDress(deco, bKL, { garden: true, laundry: 0, parapet: true });
+  roofDress(deco, bKL, { garden: true, laundry: 0, parapet: false });
+  hedge(deco, 4.15, -171.6, 4.95, -148.4, 2.6, { h: 0.85 });
+  for (const z of [-156.6, -163.6, -170.4]) {
+    A.boxMinMax(5.0, K_TOP, z - 0.3, 5.34, 2.05, z + 0.3, { kind: K.STONE, color: 0xddcbb8 });
+    A.boxMinMax(5.0, 2.05, z - 0.34, 5.24, 2.32, z + 0.34, { kind: K.STONE, color: PAL.coping });
+    shadows.add(5.17, z, 1.2, 1.3, K_TOP, 0.9);
+  }
+  {
+    // Fontaine murale : vasque, plaque, bec de bronze
+    const zf = -167.4;
+    A.boxMinMax(5.0, K_TOP, zf - 0.7, 5.62, K_TOP + 0.58, zf + 0.7, { kind: K.STONE, color: 0xd8c7b4 });
+    A.boxMinMax(4.98, K_TOP + 0.56, zf - 0.76, 5.68, K_TOP + 0.64, zf + 0.76, { kind: K.STONE, color: PAL.coping });
+    ctx.water.boxMinMax(5.06, K_TOP + 0.5, zf - 0.62, 5.56, K_TOP + 0.56, zf + 0.62, {});
+    A.boxMinMax(5.0, K_TOP + 0.64, zf - 0.5, 5.1, K_TOP + 1.9, zf + 0.5, { kind: K.STONE, color: PAL.stoneWarm });
+    A.boxMinMax(5.0, K_TOP + 1.9, zf - 0.32, 5.12, K_TOP + 2.08, zf + 0.32, { kind: K.STONE, color: PAL.coping });
+    A.tube([5.1, K_TOP + 1.28, zf], [5.3, K_TOP + 1.22, zf], 0.03, 6, { kind: K.METAL, color: 0xb48a5a });
+    shadows.add(5.3, zf, 1.6, 2.0, K_TOP, 0.9);
+    ctx.solid([5.0, K_TOP, zf - 0.7], [5.62, K_TOP + 0.64, zf + 0.7], 'fountain');
+  }
   facadeDress(ctx, bKR, '-x', { floors: 3, flowers: 0.35, balcony: 0.2, ac: 0.08, awnings: 0.08, banners: 2, ivy: 1, minY: 2.6 });
   facadeDress(ctx, bKL, '+x', { floors: 2, flowers: 0.3, balcony: 0, ac: 0.1, minY: -6 });
   for (const [z, w, l] of [[-151.5, 2.2, 1.6], [-158.5, 1.6, 1.2], [-165.5, 2.4, 1.8]]) ivy(ctx, 5.0, 2.62, z, w, l, 1, 0, { over: 0.3, flowers: z === -158.5 ? [0xfaf3ff, 0xf4a3b5] : null });
@@ -293,6 +336,12 @@ export function buildLevel(scene, physics, materials) {
     A.box(13.0 - 0.06, 5.2, z, 0.12, 0.12, 0.12, { kind: K.METAL, color: PAL.metalDark });
     laundry(ctx, [4.75, 4.5, z], [12.95, 5.2, z + (rand() - 0.5) * 1.2], { sag: 0.35 });
   }
+  // Sol de la ruelle : rigole centrale, bordures de pierre, regards
+  gutter(ctx, 8.28, 8.72, -171.7, -147.3, K_TOP);
+  inlay(ctx, 5.0, 5.36, -171.8, -147.2, K_TOP, { kind: K.STONE, color: PAL.stoneWarm, h: 0.05 });
+  inlay(ctx, 12.64, 13.0, -171.8, -147.2, K_TOP, { kind: K.STONE, color: PAL.stoneWarm, h: 0.05 });
+  drain(ctx, 6.1, K_TOP, -158.4);
+  drain(ctx, 11.0, K_TOP, -163.8);
   // Obstacle 1 : jardinière de pierre à franchir
   A.boxMinMax(6.0, K_TOP, -153.8, 12.0, K_TOP + 0.84, -153.0, { kind: K.STONE, color: PAL.stone });
   A.boxMinMax(5.95, K_TOP + 0.84, -153.85, 12.05, K_TOP + 0.9, -152.95, { kind: K.CORAL, color: PAL.coral });
@@ -329,7 +378,7 @@ export function buildLevel(scene, physics, materials) {
   lantern(ctx, 12.4, K_TOP, -149.0);
   lantern(ctx, 5.6, K_TOP, -170.9);
   // Mur d'escalade final : panneau corail
-  A.boxMinMax(7.0, K_TOP, -172.0, 10.0, 3.75, -171.965, { kind: K.CORAL, color: PAL.coral });
+  A.boxMinMax(7.0, K_TOP, -172.0, 10.0, 3.75, -171.93, { kind: K.CORAL, color: PAL.coral });
   ivy(ctx, 6.25, 4.0, -171.97, 1.2, 2.4, 0, 1, { flowers: [0xfaf3ff] });
   ivy(ctx, 11.3, 4.4, -171.97, 1.8, 2.2, 0, 1);
 
@@ -337,7 +386,7 @@ export function buildLevel(scene, physics, materials) {
   // M : la montée (escalier et portique)
   // =====================================================================
   const M_TOP = 4.0;
-  B({ minX: 4, maxX: 14, minZ: -180, maxZ: -172, top: M_TOP, style: 0.21, color: PAL.plaster, corniceColor: PAL.coralSoft });
+  B({ minX: 4, maxX: 14, minZ: -180, maxZ: -172, top: M_TOP, style: 0.21, color: PAL.plaster, corniceColor: PAL.coralSoft, faces: ['-z', '+x', '-x'], corniceOver: 0.1 });
   for (let k = 1; k <= 6; k++) {
     const zf = -174.5 - 0.6 * (k - 1);
     const top = M_TOP + 0.3 * k;
@@ -420,6 +469,11 @@ export function buildLevel(scene, physics, materials) {
   parapet(ctx, 16.85, -190.3, 16.85, -209.7, N_TOP);
   parapet(ctx, 0, -209.85, 17, -209.85, N_TOP);
   A.boxMinMax(7.4, N_TOP, -198.5, 9.6, N_TOP + 0.012, -190.3, { kind: K.STONE, color: PAL.coping });
+  inlay(ctx, 7.1, 7.4, -197.7, -190.3, N_TOP, { tile: 0.04, color: 0xd9a184, h: 0.016 });
+  inlay(ctx, 9.6, 9.9, -197.7, -190.3, N_TOP, { tile: 0.04, color: 0xd9a184, h: 0.016 });
+  inlay(ctx, 1.1, 4.1, -207.3, -204.3, N_TOP, { kind: K.GRAVEL, color: 0xd9d0c5, h: 0.02 });
+  inlay(ctx, 12.9, 15.9, -207.1, -204.1, N_TOP, { kind: K.GRAVEL, color: 0xd9d0c5, h: 0.02 });
+  inlay(ctx, 5.6, 11.4, -202.9, -197.1, N_TOP, { tile: 0.5, color: 0xeadfd2, h: 0.01 });
   for (const [px, pz] of [[6.8, -198.3], [10.2, -198.3], [6.8, -201.7], [10.2, -201.7]]) {
     A.box(px, N_TOP + 1.6, pz, 0.32, 3.2, 0.32, { kind: K.WOOD, color: PAL.woodDark });
     A.box(px, N_TOP + 0.08, pz, 0.5, 0.16, 0.5, { kind: K.STONE, color: PAL.coping });
@@ -470,14 +524,14 @@ export function buildLevel(scene, physics, materials) {
   // =====================================================================
   const near = [
     // droite
-    { minX: 9.5, maxX: 19, minZ: -8, maxZ: 9, top: 6.5, style: 0.08, color: PAL.plaster, face: '-x', banners: 2 },
+    { minX: 9.5, maxX: 19, minZ: -8, maxZ: 9, top: 6.5, style: 0.08, color: PAL.plaster, face: '-x', banners: 2, attic: 3.6 },
     { minX: 7.5, maxX: 18, minZ: -29, maxZ: -12, top: -3.2, style: 0.55, color: PAL.plasterSage, garden: true },
-    { minX: 14, maxX: 24, minZ: -60, maxZ: -46, top: 4.5, style: 0.37, color: PAL.plasterWarm, plain: true },
+    { minX: 14, maxX: 24, minZ: -60, maxZ: -46, top: 4.5, style: 0.37, color: PAL.plasterWarm, panel: [-57.2, -48.8, -2.3, 2.6] },
     { minX: 13.5, maxX: 23, minZ: -42, maxZ: -31, top: -1.5, style: 0.62, color: PAL.plasterCool },
     { minX: 6.5, maxX: 16, minZ: -85, maxZ: -64, top: 0.6, style: 0.95, color: PAL.plasterSand, garden: true },
-    { minX: 12, maxX: 22, minZ: -104, maxZ: -86, top: 10.5, style: 0.18, color: PAL.plaster, face: '-x', banners: 2 },
-    { minX: 15.5, maxX: 25, minZ: -134, maxZ: -109, top: 8.5, style: 0.83, color: PAL.plasterRose, plain: true },
-    { minX: 15, maxX: 25, minZ: -190, maxZ: -175, top: 3.6, style: 0.49, color: PAL.plasterWarm, face: '-x' },
+    { minX: 12, maxX: 22, minZ: -104, maxZ: -86, top: 10.5, style: 0.18, color: PAL.plaster, face: '-x', banners: 2, attic: 3.4 },
+    { minX: 15.5, maxX: 25, minZ: -134, maxZ: -109, top: 8.5, style: 0.83, color: PAL.plasterRose, panel: [-126.6, -116.4, 0.9, 7.2] },
+    { minX: 15, maxX: 25, minZ: -190, maxZ: -175, top: 3.6, style: 0.49, color: PAL.plasterWarm, face: '-x', attic: 3.4 },
     { minX: 20, maxX: 30, minZ: -212, maxZ: -193, top: 2.0, style: 0.74, color: PAL.plaster, bare: true },
     // gauche
     { minX: -21, maxX: -11, minZ: -22, maxZ: 3, top: -2.5, style: 0.28, color: PAL.plasterRose, garden: true },
@@ -492,9 +546,26 @@ export function buildLevel(scene, physics, materials) {
   ];
   for (const n of near) {
     const b = B({ ...n });
-    if (!n.bare) roofDress(deco, b, { garden: n.garden ?? false });
+    if (n.attic) {
+      // Attique en retrait avec sa propre corniche, petite terrasse devant
+      const ins = 1.6;
+      const a = building(deco, { minX: b.minX + ins, maxX: b.maxX - ins * 0.5, minZ: b.minZ + ins * 0.5, maxZ: b.maxZ - ins * 0.5, top: b.top + n.attic, bottom: b.top - 0.3, color: mixHex(n.color, PAL.plasterSand, 0.3), style: (n.style + 0.37) % 0.96, deck: 'roof', bands: false, detail: 'full' });
+      roofDress(deco, a, { garden: false, parapet: true });
+      railing(deco, b.minX + 0.3, b.minZ + 0.4, b.minX + 0.3, b.maxZ - 0.4, b.top, { collide: false });
+    } else if (!n.bare) roofDress(deco, b, { garden: n.garden ?? false });
     if (n.face) facadeDress(ctx, b, n.face, { floors: 5, flowers: 0.3, balcony: 0.16, ac: 0.08, awnings: 0.06, banners: n.banners ?? 0, ivy: 1, minY: -16 });
+    if (n.panel) {
+      // Panneau aveugle encadré de pierre, où l'on a peint une vieille réclame
+      const [z0, z1, y0, y1] = n.panel, x = b.minX;
+      A.boxMinMax(x - 0.16, y0, z0, x, y1, z1, { kind: K.PLASTER, color: mixHex(n.color, 0xffffff, 0.25) });
+      for (const [a0, a1, c0, c1] of [[y0 - 0.25, y0, z0 - 0.25, z1 + 0.25], [y1, y1 + 0.25, z0 - 0.25, z1 + 0.25], [y0, y1, z0 - 0.25, z0], [y0, y1, z1, z1 + 0.25]]) {
+        A.boxMinMax(x - 0.24, a0, c0, x, a1, c1, { kind: K.PLASTER, color: PAL.coping });
+      }
+    }
   }
+
+  // Salissures et ombres de contact là où les terrasses butent contre les volumes
+  junctionGrime(keepOut, shadows, ctx.groundAt);
 
   // Campanile derrière le pavillon : un repère qu'on aperçoit de loin
   {
@@ -519,8 +590,8 @@ export function buildLevel(scene, physics, materials) {
 
   // Plaques de rue et réclames peintes
   const signs = new Signs();
-  signs.add('savon', 15.5, 4.2, -121.5, -1, 0, 9.0);
-  signs.add('the', 14, 0.2, -53, -1, 0, 7.0);
+  signs.add('savon', 15.34, 4.1, -121.5, -1, 0, 9.0);
+  signs.add('the', 13.84, 0.2, -53, -1, 0, 7.0);
   signs.add('lavandieres', 13, 2.75, -156.0, -1, 0, 1.3);
   signs.add('montee', 4.95, 2.95, -172, 0, 1, 1.3);
   signs.add('nuages', 10.7, 4.95, -190, 0, 1, 1.2);
@@ -535,7 +606,8 @@ export function buildLevel(scene, physics, materials) {
   const corridor = (z) => (z > -60 ? [-24, 26] : z > -140 ? [-25, 28] : [-17, 33]);
   // Côté soleil (gauche), la ville reste basse : la vue s'ouvre sur la lumière.
   const cap = (x, z) => (x < 0 && x > -125 && z > -170 ? 1.5 : Infinity);
-  buildCity(ctx, { corridor, keepOut, cap });
+  // Ville : son propre tirage, pour que les retouches du parcours ne la redistribuent pas.
+  buildCity({ ...ctx, rand: rng(31) }, { corridor, keepOut, cap });
 
   // =====================================================================
   // Maillages fusionnés
@@ -582,17 +654,17 @@ export function buildLevel(scene, physics, materials) {
 
   // ---------- Lueurs à collecter ----------
   const orbPositions = [
-    [0, 1.8, -8.5],
-    [0, 2.0, -17.5],
-    [2.6, 4.0, -34], [2.6, 4.4, -37.5], [2.6, 4.0, -41],
-    [-0.5, 2.6, -48],
-    [-0.5, 6.5, -57],
+    [0.45, 1.75, -8.5],
+    [0.45, 1.9, -17.5],
+    [2.2, 4.0, -34], [2.2, 4.75, -37.5], [2.2, 4.1, -41],
+    [0.5, 2.5, -46.5],
+    [0.1, 6.45, -57],
     [0, 5.8, -66.2], [0, 5.8, -72.6], [0, 5.8, -79.0],
     [-5.6, 4.9, -96.6], [4.2, 4.6, -92],
-    [3.0, 4.6, -105.5], [4.3, 3.5, -115.5], [5.4, 2.3, -125.5],
-    [5.4, 2.4, -139.5], [5.4, 2.8, -142.5], [5.4, 2.4, -145.5],
-    [8.5, 1.9, -153.4], [8.5, 1.05, -160.8],
-    [8.5, 5.2, -176.2], [8.5, 6.9, -185],
+    [3.0, 5.2, -105.5], [4.3, 4.3, -115.5], [5.0, 3.0, -125.5],
+    [5.8, 2.45, -139.5], [5.8, 3.0, -142.5], [5.8, 2.5, -145.5],
+    [9.0, 1.45, -153.4], [9.0, 1.0, -160.8],
+    [9.0, 5.2, -176.2], [8.95, 6.55, -185],
     [2.4, 6.7, -203.5], [14.6, 6.7, -194.8],
   ];
   const orbGeo = new THREE.IcosahedronGeometry(0.16, 1);
@@ -612,17 +684,17 @@ export function buildLevel(scene, physics, materials) {
 
   // ---------- Points de reprise ----------
   const checkpoints = [
-    { name: 'A', min: [-7, -1, -7], max: [7, 2, 7], spawn: [0, 0, 4], yaw: 0 },
-    { name: 'B', min: [-3, 0, -16], max: [3, 2, -10], spawn: [0, 0.5, -12], yaw: 0 },
-    { name: 'D', min: [-4, 1.5, -32], max: [3, 4, -19], spawn: [-0.5, 2, -22], yaw: 0 },
-    { name: 'E', min: [-4, 1.5, -54], max: [3, 4, -42], spawn: [-0.5, 2, -43.5], yaw: 0 },
-    { name: 'F', min: [-4, 5, -60], max: [3, 8, -54], spawn: [-0.5, 5.6, -58.5], yaw: 0 },
-    { name: 'H', min: [-9, 3, -104], max: [9, 7, -86.4], spawn: [0, H_TOP, -88.5], yaw: 0 },
-    { name: 'I', min: [-1, 2, -114], max: [7, 5, -107], spawn: [3.5, 2.6, -108.6], yaw: 0 },
-    { name: 'J', min: [3, 0, -137], max: [12, 3, -127], spawn: [5.6, 0.4, -128.6], yaw: 0 },
-    { name: 'K', min: [5, 0, -172], max: [13, 3, -147], spawn: [8.5, K_TOP, -148.6], yaw: 0 },
-    { name: 'M', min: [4, 3.5, -180], max: [14, 7, -172], spawn: [8.5, M_TOP, -173.4], yaw: 0 },
-    { name: 'N', min: [0, 5, -210], max: [17, 9, -190], spawn: [8.5, N_TOP, -191.5], yaw: 0 },
+    { name: 'A', title: 'La terrasse aux lavandes', min: [-7, -1, -7], max: [7, 2, 7], spawn: [0, 0, 4], yaw: 0 },
+    { name: 'B', title: 'Le premier pas', min: [-3, 0, -16], max: [3, 2, -10], spawn: [0, 0.5, -12], yaw: 0 },
+    { name: 'D', title: 'Le mur corail', min: [-4, 1.5, -32], max: [3, 4, -19], spawn: [-0.5, 2, -22], yaw: 0 },
+    { name: 'E', title: 'La pergola des glycines', min: [-4, 1.5, -54], max: [3, 4, -42], spawn: [-0.5, 2, -43.5], yaw: 0 },
+    { name: 'F', title: 'Le toit rose', min: [-4, 5, -60], max: [3, 8, -54], spawn: [-0.5, 5.6, -58.5], yaw: 0 },
+    { name: 'H', title: 'Le jardin du bassin', min: [-9, 3, -104], max: [9, 7, -86.4], spawn: [0, H_TOP, -88.5], yaw: 0 },
+    { name: 'I', title: 'La cascade de toits', min: [-1, 2, -114], max: [7, 5, -107], spawn: [3.5, 2.6, -108.6], yaw: 0 },
+    { name: 'J', title: 'Les toits blancs', min: [3, 0, -137], max: [12, 3, -127], spawn: [5.6, 0.4, -128.6], yaw: 0 },
+    { name: 'K', title: 'La ruelle du linge', min: [5, 0, -172], max: [13, 3, -147], spawn: [8.5, K_TOP, -148.6], yaw: 0 },
+    { name: 'M', title: 'La montée au portique', min: [4, 3.5, -180], max: [14, 7, -172], spawn: [8.5, M_TOP, -173.4], yaw: 0 },
+    { name: 'N', title: 'Le pavillon de la cloche', min: [0, 5, -210], max: [17, 9, -190], spawn: [8.5, N_TOP, -191.5], yaw: 0 },
   ];
 
   // ---------- Conseils ----------

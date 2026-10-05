@@ -44,7 +44,102 @@ export function buildingStyle(st) {
   };
 }
 
+// Fenêtres dessinées par le shader : on reproduit la même grille pour poser
+// pilastres, jardinières, balcons et climatiseurs exactement entre ou sous les fenêtres.
+export function windowGrid(b, face) {
+  const st = b.style;
+  const s = buildingStyle(st);
+  const style = st >= 0.97 ? 3 : Math.floor(fract(st * 7.31) * 3);
+  const shut = (style === 0 || style === 2) && fract(st * 13.7) > 0.45;
+  const bayW = style === 3 ? 1.5 : style === 1 ? 1.6 + 0.4 * fract(st * 2.9) : 2.3 + 0.9 * fract(st * 9.1);
+  const W = face === '+x' || face === '-x' ? b.d : b.w;
+  const nb = Math.max(1, Math.floor(W / bayW + 0.5));
+  const bw = W / nb;
+  let mn, mx;
+  if (style === 0) { mn = shut ? [bw * 0.3, 0.55] : [0.42, 0.55]; mx = shut ? [bw * 0.7, s.floorH - 0.95] : [bw - 0.42, s.floorH - 0.95]; }
+  else if (style === 3) { mn = [0, 0]; mx = [bw, s.floorH]; }
+  else if (style === 1) { mn = [0.06, 0.7]; mx = [bw - 0.06, s.floorH - 0.85]; }
+  else { mn = [bw * 0.28, 0.35]; mx = [bw * 0.72, s.floorH - 0.3]; }
+  return { style, shut, nb, bw, band: s.band, floorH: s.floorH, mn, mx, W };
+}
+
+// Boîte collée sur une face : u0..u1 le long de la face (vue de l'extérieur, depuis
+// la gauche), y0..y1 en hauteur, saillie `dep` vers l'extérieur (négative : dans le mur).
+export function faceBox(batch, b, face, u0, u1, y0, y1, dep, o) {
+  const d0 = Math.min(0, dep), d1 = Math.max(0, dep);
+  switch (face) {
+    case '+z': batch.boxMinMax(b.minX + u0, y0, b.maxZ + d0, b.minX + u1, y1, b.maxZ + d1, o); break;
+    case '-z': batch.boxMinMax(b.maxX - u1, y0, b.minZ - d1, b.maxX - u0, y1, b.minZ - d0, o); break;
+    case '+x': batch.boxMinMax(b.maxX + d0, y0, b.maxZ - u1, b.maxX + d1, y1, b.maxZ - u0, o); break;
+    default: batch.boxMinMax(b.minX - d1, y0, b.minZ + u0, b.minX - d0, y1, b.minZ + u1, o);
+  }
+}
+
+const FACES = ['+z', '-z', '+x', '-x'];
+
+// Modénature d'une façade : pilastres entre les baies, chaînes d'angle, allèges
+// filantes des bandeaux vitrés, ailettes des murs rideaux.
+function sculptFace(batch, bb, face, shaftTop, yLow, frameCol, o) {
+  const g = windowGrid(bb, face);
+  const W = g.W;
+  if (W < 3) return;
+  const yTop = shaftTop - 0.44;
+  if (g.style === 0 || g.style === 2) {
+    const pw = g.shut ? 0.3 : 0.42;
+    for (let i = 1; i < g.nb; i++) {
+      const u = i * g.bw;
+      faceBox(batch, bb, face, u - pw / 2, u + pw / 2, yLow, yTop, 0.09, { kind: K.PLASTER, color: frameCol });
+    }
+    // Chaînes d'angle (un peu plus larges)
+    if (o.quoins !== false) {
+      faceBox(batch, bb, face, 0, 0.5, yLow, yTop, 0.11, { kind: K.PLASTER, color: frameCol });
+      faceBox(batch, bb, face, W - 0.5, W, yLow, yTop, 0.11, { kind: K.PLASTER, color: frameCol });
+    }
+  } else if (g.style === 1) {
+    // Allèges filantes en saillie entre les rubans de fenêtres
+    for (let f = 0; f < 30; f++) {
+      const y1 = shaftTop - (g.band + f * g.floorH + g.floorH - 0.85);
+      const y0 = shaftTop - (g.band + (f + 1) * g.floorH + 0.7);
+      if (y1 < yLow) break;
+      faceBox(batch, bb, face, -0.06, W + 0.06, Math.max(y0, yLow), y1, 0.07, { kind: K.PLASTER, color: frameCol });
+    }
+    faceBox(batch, bb, face, -0.06, W + 0.06, shaftTop - g.band - 0.7, yTop, 0.07, { kind: K.PLASTER, color: frameCol });
+  } else if (g.style === 3) {
+    for (let i = 0; i <= g.nb; i++) {
+      const u = Math.min(W - 0.05, Math.max(0.05, i * g.bw));
+      faceBox(batch, bb, face, u - 0.05, u + 0.05, yLow, yTop, o.far ? 0.18 : 0.26, { kind: K.METAL, color: 0xd9dbe0 });
+    }
+  }
+}
+
+// Corniche saillante : larmier, modillons, frise et cimaise.
+function cornice(batch, bb, shaftTop, ov, col, full, faces) {
+  const { minX, maxX, minZ, maxZ } = bb;
+  const w = maxX - minX, d = maxZ - minZ;
+  const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+  // Larmier (débord principal) et cimaise
+  batch.box(cx, shaftTop - 0.17, cz, w + ov * 2, 0.34, d + ov * 2, { kind: K.PLASTER, color: col });
+  batch.box(cx, shaftTop - 0.39, cz, w + ov * 1.2, 0.1, d + ov * 1.2, { kind: K.PLASTER, color: col, skipTop: true });
+  // Frise
+  batch.box(cx, shaftTop - 0.95, cz, w + 0.1, 0.22, d + 0.1, { kind: K.PLASTER, color: col, skipTop: true });
+  if (!full) return;
+  // Modillons : petits consoles régulières sous le larmier (ombres rythmées)
+  const step = 0.62;
+  const dep = ov * 0.92;
+  for (const face of faces) {
+    const W = face === '+x' || face === '-x' ? d : w;
+    const n = Math.max(1, Math.floor(W / step));
+    const s0 = (W - (n - 1) * step) / 2;
+    for (let i = 0; i < n; i++) {
+      const u = s0 + i * step;
+      faceBox(batch, bb, face, u - 0.08, u + 0.08, shaftTop - 0.6, shaftTop - 0.34, dep, { kind: K.PLASTER, color: col, skipTop: true });
+    }
+  }
+}
+
 // Immeuble : fût à fenêtres, corniche, terrasse dallée ou toit, bandeaux.
+// o.detail : 'full' (pilastres + modillons), 'simple' (pilastres, corniche simple), false.
+// o.faces : faces à sculpter (on évite les murs où l'on court et grimpe).
 export function building(ctx, o) {
   const b = o.batch ?? ctx.arch;
   const { minX, maxX, minZ, maxZ, top } = o;
@@ -56,18 +151,31 @@ export function building(ctx, o) {
   const deck = o.deck ?? 'pave';
   const deckT = deck === 'pave' ? 0.3 : 0;
   const shaftTop = top - deckT;
-  const cornice = o.cornice ?? true;
+  const hasCornice = o.cornice ?? true;
   const corniceCol = o.corniceColor ?? PAL.coping;
+  const detail = o.detail ?? (b === ctx.arch ? 'full' : 'simple');
+  const faces = o.faces ?? FACES;
+  const bb = { minX, maxX, minZ, maxZ, w, d, style: st };
 
   if (deck === 'pave') {
     b.box(cx, top - deckT / 2, cz, w, deckT, d, { kind: o.deckKind ?? K.PAVE, color: o.deckColor ?? PAL.deck, style: o.tile ?? 0.55, skipBottom: true });
   }
   const shaftH = shaftTop - bottom;
   b.box(cx, bottom + shaftH / 2, cz, w, shaftH, d, { kind: o.sideKind ?? (o.plain ? K.PLASTER : K.FACADE), color, style: st, skipBottom: true, skipTop: deck === 'pave' });
-  if (cornice) {
-    const ov = o.corniceOver ?? 0.2;
-    b.box(cx, shaftTop - 0.22, cz, w + ov * 2, 0.44, d + ov * 2, { kind: K.PLASTER, color: corniceCol });
-    b.box(cx, shaftTop - 0.56, cz, w + ov, 0.24, d + ov, { kind: K.PLASTER, color: corniceCol });
+  if (hasCornice) {
+    const ov = o.corniceOver ?? (detail === 'full' && !o.plain ? 0.42 : 0.2);
+    if (o.plain || !detail) {
+      b.box(cx, shaftTop - 0.22, cz, w + ov * 2, 0.44, d + ov * 2, { kind: K.PLASTER, color: corniceCol });
+      b.box(cx, shaftTop - 0.56, cz, w + ov, 0.24, d + ov, { kind: K.PLASTER, color: corniceCol });
+    } else {
+      cornice(b, bb, shaftTop, ov, corniceCol, detail === 'full', faces);
+    }
+  }
+  // Pilastres, allèges, ailettes
+  if (detail && !o.plain && shaftH > 3) {
+    const yLow = Math.max(bottom, o.detailBottom ?? -26);
+    const frameCol = o.frameColor ?? mixHex(color, corniceCol, 0.55);
+    for (const face of faces) sculptFace(b, bb, face, shaftTop, yLow, frameCol, { far: detail !== 'full', quoins: o.quoins });
   }
   // Bandeaux tous les quelques étages, alignés sur les dalles dessinées par le shader
   if (o.bands !== false && !o.plain) {
@@ -77,13 +185,19 @@ export function building(ctx, o) {
       const y = shaftTop - (s.band + k * s.floorH);
       if (y < bottom + 4) break;
       if (y < -24) break; // sous la mer de nuages, inutile
-      b.box(cx, y, cz, w + 0.16, 0.26, d + 0.16, { kind: K.PLASTER, color: corniceCol });
+      b.box(cx, y, cz, w + 0.3, 0.26, d + 0.3, { kind: K.PLASTER, color: corniceCol });
     }
   }
   if (o.collide !== false && ctx.physics) {
     ctx.solid([minX, bottom, minZ], [maxX, top, maxZ], o.tag ?? 'building');
   }
-  return { minX, maxX, minZ, maxZ, top, cx, cz, w, d, style: st, plain: !!o.plain, deck };
+  return { minX, maxX, minZ, maxZ, top, cx, cz, w, d, style: st, plain: !!o.plain, deck, color };
+}
+
+const _ca = new THREE.Color(), _cb = new THREE.Color();
+export function mixHex(a, b, t) {
+  _ca.set(a); _cb.set(b);
+  return _ca.lerp(_cb, t).getHex();
 }
 
 // Mur bas avec chaperon
@@ -97,6 +211,23 @@ export function parapet(ctx, x1, z1, x2, z2, top, o = {}) {
   const bz0 = alongX ? minZ - t / 2 : minZ, bz1 = alongX ? minZ + t / 2 : maxZ;
   b.boxMinMax(bx0, top, bz0, bx1, top + h - 0.07, bz1, { kind: K.PLASTER, color: o.color ?? PAL.plaster });
   b.boxMinMax(bx0 - (alongX ? 0 : 0.05), top + h - 0.07, bz0 - (alongX ? 0.05 : 0), bx1 + (alongX ? 0 : 0.05), top + h, bz1 + (alongX ? 0.05 : 0), { kind: o.coral ? K.CORAL : K.STONE, color: o.coral ? PAL.coral : PAL.coping });
+  // Piliers réguliers le long des grands murets : rythme, ombres, petits chapiteaux
+  const len = alongX ? maxX - minX : maxZ - minZ;
+  if (o.piers !== false && len > 4.5 && !o.coral) {
+    const n = Math.max(1, Math.round(len / 3.2));
+    const pc = o.pierColor ?? PAL.coping;
+    for (let i = 0; i <= n; i++) {
+      const c = (alongX ? minX : minZ) + (len * i) / n;
+      const c0 = Math.max(alongX ? minX : minZ, c - 0.2), c1 = Math.min(alongX ? maxX : maxZ, c + 0.2);
+      if (alongX) {
+        b.boxMinMax(c0, top, bz0 - 0.045, c1, top + h - 0.07, bz1 + 0.045, { kind: K.PLASTER, color: pc });
+        b.boxMinMax(c0 - 0.04, top + h - 0.07, bz0 - 0.08, c1 + 0.04, top + h + 0.05, bz1 + 0.08, { kind: K.STONE, color: PAL.coping });
+      } else {
+        b.boxMinMax(bx0 - 0.045, top, c0, bx1 + 0.045, top + h - 0.07, c1, { kind: K.PLASTER, color: pc });
+        b.boxMinMax(bx0 - 0.08, top + h - 0.07, c0 - 0.04, bx1 + 0.08, top + h + 0.05, c1 + 0.04, { kind: K.STONE, color: PAL.coping });
+      }
+    }
+  }
   // Ombre de contact du seul côté où il y a un sol (pas au-dessus du vide)
   if (ctx.ao && ctx.groundAt) {
     const mx = (bx0 + bx1) / 2, mz = (bz0 + bz1) / 2;
@@ -144,7 +275,7 @@ export function acUnit(ctx, x, y, z, o = {}) {
   const s = o.scale ?? 1;
   const rot = o.rotY ?? 0;
   const w = 1.3 * s, h = 0.95 * s, d = 0.85 * s;
-  b.box(x, y + 0.06, z, w + 0.1, 0.12, d + 0.1, { kind: K.METAL, color: PAL.metalDark, rotY: rot });
+  if (b !== ctx.far) b.box(x, y + 0.06, z, w + 0.1, 0.12, d + 0.1, { kind: K.METAL, color: PAL.metalDark, rotY: rot });
   b.box(x, y + 0.12 + h / 2, z, w, h, d, { kind: K.VENT, color: o.color ?? PAL.metalLight, rotY: rot });
   ao(ctx, x, z, w + 0.6, d + 0.6, y, 1, rot);
   if (o.collide && ctx.physics) {

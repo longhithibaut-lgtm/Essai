@@ -1,29 +1,10 @@
 import { K } from './surfaces.js';
-import { PAL, buildingStyle, acUnit, waterTank, vent, chimney, antenna, hut, skylight, planter, parapet, shadeSail, banner, awning, laundry, gableRoof, dome, duct } from './props.js';
+import { PAL, windowGrid, acUnit, waterTank, vent, chimney, antenna, hut, skylight, planter, parapet, shadeSail, banner, awning, laundry, gableRoof, dome, duct } from './props.js';
 import { tree, cypress, bush, hedge, ivy } from './vegetation.js';
 
 // Habillage automatique des toits et des façades des immeubles voisins.
 
-const fract = (x) => x - Math.floor(x);
-
-// Fenêtres dessinées par le shader : on reproduit la même grille pour poser
-// jardinières, balcons et climatiseurs exactement sous les fenêtres.
-export function windowGrid(b, face) {
-  const st = b.style;
-  const s = buildingStyle(st);
-  const style = st >= 0.97 ? 3 : Math.floor(fract(st * 7.31) * 3);
-  const shut = (style === 0 || style === 2) && fract(st * 13.7) > 0.45;
-  const bayW = style === 3 ? 1.5 : style === 1 ? 1.6 + 0.4 * fract(st * 2.9) : 2.3 + 0.9 * fract(st * 9.1);
-  const W = face === '+x' || face === '-x' ? b.d : b.w;
-  const nb = Math.max(1, Math.floor(W / bayW + 0.5));
-  const bw = W / nb;
-  let mn, mx;
-  if (style === 0) { mn = shut ? [bw * 0.3, 0.55] : [0.42, 0.55]; mx = shut ? [bw * 0.7, s.floorH - 0.95] : [bw - 0.42, s.floorH - 0.95]; }
-  else if (style === 3) { mn = [0, 0]; mx = [bw, s.floorH]; }
-  else if (style === 1) { mn = [0.06, 0.7]; mx = [bw - 0.06, s.floorH - 0.85]; }
-  else { mn = [bw * 0.28, 0.35]; mx = [bw * 0.72, s.floorH - 0.3]; }
-  return { style, shut, nb, bw, band: s.band, floorH: s.floorH, mn, mx, W };
-}
+export { windowGrid };
 
 // Position monde d'un point (u le long de la face, y) et normale de la face
 function facePoint(b, face, u, off) {
@@ -143,20 +124,20 @@ export function roofDress(ctx, b, o = {}) {
     dome(ctx, cx, y, cz, r, { batch, color: rand() < 0.3 ? 0xdfe8ee : 0xf6f1ea });
     const pctx2 = { ...ctx, physics: null };
     const h = 0.7;
-    parapet(pctx2, b.minX, b.maxZ - 0.15, b.maxX, b.maxZ - 0.15, y, { h, batch, collide: false });
-    parapet(pctx2, b.minX, b.minZ + 0.15, b.maxX, b.minZ + 0.15, y, { h, batch, collide: false });
-    parapet(pctx2, b.minX + 0.15, b.minZ + 0.3, b.minX + 0.15, b.maxZ - 0.3, y, { h, batch, collide: false });
-    parapet(pctx2, b.maxX - 0.15, b.minZ + 0.3, b.maxX - 0.15, b.maxZ - 0.3, y, { h, batch, collide: false });
+    parapet(pctx2, b.minX, b.maxZ - 0.15, b.maxX, b.maxZ - 0.15, y, { h, batch, collide: false, piers: !far });
+    parapet(pctx2, b.minX, b.minZ + 0.15, b.maxX, b.minZ + 0.15, y, { h, batch, collide: false, piers: !far });
+    parapet(pctx2, b.minX + 0.15, b.minZ + 0.3, b.minX + 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far });
+    parapet(pctx2, b.maxX - 0.15, b.minZ + 0.3, b.maxX - 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far });
     return;
   }
   // Muret périphérique
   if (o.parapet !== false) {
     const h = 0.5 + rand() * 0.5;
     const pctx = { ...ctx, physics: null };
-    parapet(pctx, b.minX, b.maxZ - 0.15, b.maxX, b.maxZ - 0.15, y, { h, batch, collide: false });
-    parapet(pctx, b.minX, b.minZ + 0.15, b.maxX, b.minZ + 0.15, y, { h, batch, collide: false });
-    parapet(pctx, b.minX + 0.15, b.minZ + 0.3, b.minX + 0.15, b.maxZ - 0.3, y, { h, batch, collide: false });
-    parapet(pctx, b.maxX - 0.15, b.minZ + 0.3, b.maxX - 0.15, b.maxZ - 0.3, y, { h, batch, collide: false });
+    parapet(pctx, b.minX, b.maxZ - 0.15, b.maxX, b.maxZ - 0.15, y, { h, batch, collide: false, piers: !far });
+    parapet(pctx, b.minX, b.minZ + 0.15, b.maxX, b.minZ + 0.15, y, { h, batch, collide: false, piers: !far });
+    parapet(pctx, b.minX + 0.15, b.minZ + 0.3, b.minX + 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far });
+    parapet(pctx, b.maxX - 0.15, b.minZ + 0.3, b.maxX - 0.15, b.maxZ - 0.3, y, { h, batch, collide: false, piers: !far });
   }
   const used = [];
   const free = (x, z, r) => used.every((u) => Math.hypot(u[0] - x, u[1] - z) > u[2] + r);
@@ -171,10 +152,20 @@ export function roofDress(ctx, b, o = {}) {
   const area = W * D;
   const pctx = { ...ctx, physics: null };
   const garden = o.garden ?? (rand() < 0.3);
-  if (rand() < 0.45) place(1.4, (x, z) => waterTank(pctx, x, y, z, { batch, r: 0.9 + rand() * 0.4, h: 1.4 + rand() * 0.8, leg: 1.0 + rand() * 1.2 }));
+  if (rand() < 0.55) place(1.4, (x, z) => waterTank(pctx, x, y, z, { batch, r: 0.9 + rand() * 0.4, h: 1.4 + rand() * 0.8, leg: 1.0 + rand() * 1.2 }));
   if (rand() < 0.35 && area > 40) place(1.8, (x, z) => hut(pctx, x, y, z, { batch, rotY: Math.floor(rand() * 4) * Math.PI / 2, awning: !far, vent: !far, color: [PAL.plasterWarm, PAL.plaster, PAL.plasterSand][Math.floor(rand() * 3)] }));
   // Groupes de climatiseurs reliés par une gaine, comme sur les vrais toits
-  const nClusters = Math.min(3, Math.floor(area / 50 * (o.acDensity ?? 1)) + (rand() < 0.6 ? 1 : 0));
+  // Caissons techniques (comme sur les vrais toits : on lit la ville par ses toits)
+  const nBox = Math.min(3, Math.floor(area / 60)) + (rand() < 0.5 ? 1 : 0);
+  for (let i = 0; i < nBox; i++) {
+    const bw = 0.9 + rand() * 1.4, bd = 0.8 + rand() * 1.0, bh = 0.6 + rand() * 1.0;
+    place(Math.max(bw, bd) * 0.6 + 0.2, (x, z) => {
+      batch.box(x, y + bh / 2, z, bw, bh, bd, { kind: rand() < 0.5 ? K.VENT : K.PLASTER, color: rand() < 0.5 ? PAL.metalLight : PAL.plaster });
+      batch.box(x, y + bh + 0.04, z, bw + 0.08, 0.08, bd + 0.08, { kind: K.METAL, color: PAL.metal });
+      if (ctx.ao) ctx.ao(x, z, bw + 0.6, bd + 0.6, y, 0.8);
+    });
+  }
+  const nClusters = Math.min(5, Math.floor(area / 34 * (o.acDensity ?? 1)) + (rand() < 0.6 ? 1 : 0));
   for (let i = 0; i < nClusters; i++) {
     const n = 1 + Math.floor(rand() * 3);
     const alongX = rand() < 0.5;
