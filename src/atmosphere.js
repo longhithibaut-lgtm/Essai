@@ -9,24 +9,31 @@ const c = (hex, k = 1) => new THREE.Color(hex).multiplyScalar(k);
 
 export const ATMO = {
   // Soleil bas, à l'avant gauche du parcours (le joueur avance vers -z).
-  sunDir: new THREE.Vector3(-0.83, 0.36, -0.43).normalize(),
-  sun: c(0xffe6c9, 1.0), // couleur de la lumière directe
+  sunDir: new THREE.Vector3(-0.83, 0.4, -0.43).normalize(),
+  sun: c(0xffe8cc, 1.0), // couleur de la lumière directe : or pâle
   sunDisc: c(0xfff3dc, 1.0),
-  zenith: c(0x6a8ed6, 0.9),
-  upperWarm: c(0xe2bfd3, 0.95), // haut du ciel côté soleil, rose
-  upperCool: c(0xa9b2e4, 0.92), // haut du ciel côté opposé, lavande
-  horizonWarm: c(0xffd9b6, 1.06), // horizon côté soleil, pêche dorée
-  horizonCool: c(0xe9d0dc, 0.96), // horizon opposé, rose poudré
-  earthShadow: c(0xb9b6dc, 0.9), // bande bleutée sous la ceinture de Vénus
+  zenith: c(0x4e74cc, 0.8),
+  upperWarm: c(0xe2b8cf, 0.93), // haut du ciel côté soleil, rose
+  upperCool: c(0x97a3e2, 0.86), // haut du ciel côté opposé, lavande
+  horizonWarm: c(0xffd8b0, 1.08), // horizon côté soleil, pêche dorée
+  horizonCool: c(0xdccfe6, 0.92), // horizon opposé, lavande poudrée
+  earthShadow: c(0xaeafdc, 0.86), // bande bleutée sous la ceinture de Vénus
   cloudLit: c(0xffeedd, 1.32),
-  cloudShade: c(0xb7add8, 0.78),
-  cloudDeep: c(0x9196c9, 0.64),
+  cloudShade: c(0xaea9dc, 0.74),
+  cloudDeep: c(0x8a90cc, 0.6),
   mountain: c(0x9aa3d0, 0.78),
+  // Lumière d'ambiance (ciel filtré) : bleu-lavande en haut, rebond tiède en bas.
+  ambientSky: c(0x98a8f8, 1.0),
+  ambientGround: c(0xf2c9b0, 1.0),
   // Brume : voile lointain et brume de hauteur qui coule sur la mer de nuages.
-  haze: 0.0009,
+  haze: 0.00062, // voile linéaire (mer de nuages)
+  // Voile des surfaces : épaisseur (d / hazeDist)^hazePow. Le mi-plan reste net
+  // (3 % à 50 m, 8 % à 100 m), le lointain se fond (50 % vers 500 m).
+  hazeDist: 640,
+  hazePow: 1.35,
   fogY0: -22, // dessus de la mer de nuages
-  fogDensity: 0.045, // densité au niveau des nuages (par mètre)
-  fogFalloff: 0.16, // décroissance avec l'altitude (par mètre)
+  fogDensity: 0.034, // densité au niveau des nuages (par mètre)
+  fogFalloff: 0.24, // décroissance avec l'altitude (par mètre) : la brume reste dans les rues
   cloudY: -22,
 };
 
@@ -49,7 +56,11 @@ export const ATMO_GLSL = /* glsl */ `
   const vec3 AUBE_HOR_WARM = ${v3(ATMO.horizonWarm)};
   const vec3 AUBE_HOR_COOL = ${v3(ATMO.horizonCool)};
   const vec3 AUBE_EARTH_SHADOW = ${v3(ATMO.earthShadow)};
+  const vec3 AUBE_AMB_SKY = ${v3(ATMO.ambientSky)};
+  const vec3 AUBE_AMB_GROUND = ${v3(ATMO.ambientGround)};
   const float AUBE_HAZE = ${f(ATMO.haze)};
+  const float AUBE_HAZE_DIST = ${f(ATMO.hazeDist)};
+  const float AUBE_HAZE_POW = ${f(ATMO.hazePow)};
   const float AUBE_FOG_Y0 = ${f(ATMO.fogY0)};
   const float AUBE_FOG_C = ${f(ATMO.fogDensity)};
   const float AUBE_FOG_B = ${f(ATMO.fogFalloff)};
@@ -74,15 +85,24 @@ export const ATMO_GLSL = /* glsl */ `
     return col;
   }
 
-  // Épaisseur optique de la brume : voile lointain + brume de hauteur intégrée
+  // Épaisseurs optiques : x = voile lointain, y = brume de hauteur intégrée
   // analytiquement le long du rayon (densité c * exp(-b * (y - y0))).
-  float aubeFogDepth(vec3 ro, vec3 rd, float dist) {
+  vec2 aubeFogDepths(vec3 ro, vec3 rd, float dist) {
     float camH = ro.y - AUBE_FOG_Y0;
     float k = rd.y * AUBE_FOG_B;
     float e = min(-k * dist, 60.0);
     float path = abs(k) > 1e-4 ? (1.0 - exp(e)) / k : dist;
     float hf = AUBE_FOG_C * exp(clamp(-AUBE_FOG_B * camH, -60.0, 20.0)) * path;
-    return dist * AUBE_HAZE + max(hf, 0.0);
+    return vec2(pow(dist / AUBE_HAZE_DIST, AUBE_HAZE_POW), max(hf, 0.0));
+  }
+  float aubeFogDepth(vec3 ro, vec3 rd, float dist) {
+    vec2 d = aubeFogDepths(ro, rd, dist);
+    return d.x + d.y;
+  }
+
+  // La brume basse des rues est à l'ombre : lavande pâle, sans l'éclat du soleil.
+  vec3 aubeMistColor(vec3 rd) {
+    return mix(aubeHorizon(rd), AUBE_EARTH_SHADOW * 1.06, 0.45);
   }
 
   float aubeFogAmount(vec3 ro, vec3 rd, float dist) {
@@ -100,7 +120,8 @@ export function installAtmosphereFog() {
   installed = true;
   const S = THREE.ShaderChunk;
   // Ombres : filtre en tente lisse (9 lectures PCF matérielles) au lieu du disque
-  // de Vogel bruité, pour des pénombres douces sans grain.
+  // de Vogel bruité, pour des pénombres douces sans grain. Près du bord de la
+  // carte d'ombre, l'ombre s'efface doucement au lieu de s'arrêter net.
   const pcf = /float phi = interleavedGradientNoise\( gl_FragCoord\.xy \) \* PI2;[\s\S]*?\) \* 0\.2;/;
   if (pcf.test(S.shadowmap_pars_fragment)) {
     S.shadowmap_pars_fragment = S.shadowmap_pars_fragment.replace(
@@ -113,9 +134,30 @@ export function installAtmosphereFog() {
             shadow += wgt * texture(shadowMap, vec3(shadowCoord.xy + vec2(float(sx), float(sy)) * aubeO, shadowCoord.z));
           }
         }
-        shadow *= 0.0625;`
+        shadow *= 0.0625;
+        vec2 aubeEdge = abs(shadowCoord.xy * 2.0 - 1.0);
+        shadow = mix(shadow, 1.0, smoothstep(0.8, 0.985, max(aubeEdge.x, aubeEdge.y)));`
     );
   }
+  // Part de lumière indirecte (ciel, rebonds) dans le canal alpha des surfaces
+  // opaques : la passe d'occlusion ambiante n'assombrit que cette part, jamais le
+  // plein soleil. Les ombres et les recoins se creusent, la lumière reste nette.
+  S.opaque_fragment = /* glsl */ `
+    #ifdef OPAQUE
+    diffuseColor.a = 1.0;
+    #endif
+    #ifdef USE_TRANSMISSION
+    diffuseColor.a *= material.transmissionAlpha;
+    #endif
+    #if defined( OPAQUE ) && ( defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON ) )
+    {
+      const vec3 aubeLum = vec3( 0.2126, 0.7152, 0.0722 );
+      float aubeInd = dot( reflectedLight.indirectDiffuse + reflectedLight.indirectSpecular, aubeLum );
+      diffuseColor.a = clamp( aubeInd / max( dot( outgoingLight, aubeLum ), 1e-4 ), 0.0, 1.0 );
+    }
+    #endif
+    gl_FragColor = vec4( outgoingLight, diffuseColor.a );
+  `;
   S.fog_pars_vertex = /* glsl */ `
     #ifdef USE_FOG
       varying vec3 vAubeFogWorld;
@@ -150,8 +192,14 @@ export function installAtmosphereFog() {
       #else
         float aubeMul = 1.0;
       #endif
-      float fogFactor = 1.0 - exp(-aubeFogDepth(cameraPosition, aubeRd, aubeDist) * aubeMul);
-      gl_FragColor.rgb = mix(gl_FragColor.rgb, aubeFogColor(aubeRd), fogFactor);
+      vec2 aubeFD = aubeFogDepths(cameraPosition, aubeRd, aubeDist) * aubeMul;
+      float aubeFT = aubeFD.x + aubeFD.y;
+      float fogFactor = 1.0 - exp(-aubeFT);
+      vec3 aubeFC = mix(aubeFogColor(aubeRd), aubeMistColor(aubeRd), aubeFD.y / max(aubeFT, 1e-5));
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, aubeFC, fogFactor);
+      #ifdef OPAQUE
+        gl_FragColor.a *= 1.0 - fogFactor;
+      #endif
     #endif
   `;
 }
