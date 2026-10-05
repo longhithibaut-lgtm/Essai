@@ -721,3 +721,36 @@ function toRGB(hex) {
   const c = new THREE.Color(hex);
   return [c.r, c.g, c.b];
 }
+
+// Chauffe-eau solaire des toits méditerranéens : deux capteurs vitrés inclinés vers le
+// soleil sur un bâti de cornières, ballon blanc couché au-dessus.
+const _sm = new THREE.Matrix4(), _sr = new THREE.Matrix4(), _st = new THREE.Matrix4();
+let _panelGeo = null;
+export function solarHeater(ctx, x, y, z, o = {}) {
+  const b = o.batch ?? ctx.arch;
+  const rot = o.rotY ?? 0;
+  const tilt = 0.6;
+  const cs = Math.cos(rot), sn = Math.sin(rot);
+  const L = (lx, ly, lz) => [x + lx * cs + lz * sn, y + ly, z - lx * sn + lz * cs];
+  if (!_panelGeo) _panelGeo = new THREE.BoxGeometry(0.95, 0.07, 1.9);
+  const pl = 1.9, rise = Math.sin(tilt) * pl, run = Math.cos(tilt) * pl;
+  for (const lx of [-0.52, 0.52]) {
+    const c = L(lx, 0.32 + rise / 2, 0);
+    _st.makeTranslation(c[0], c[1], c[2]);
+    _sr.makeRotationY(rot);
+    _sm.makeRotationX(tilt);
+    _st.multiply(_sr).multiply(_sm);
+    b.geometry(_panelGeo, _st, { kind: K.GLASS, color: 0x5d6a86 });
+  }
+  const metal = { kind: K.METAL, color: PAL.metalLight };
+  // bâti : montants avant bas, arrière hauts, longerons
+  for (const lx of [-1.0, 0.0, 1.0]) {
+    b.tube(L(lx, 0, run / 2), L(lx, 0.32, run / 2), 0.022, 4, metal);
+    b.tube(L(lx, 0, -run / 2), L(lx, 0.32 + rise + 0.1, -run / 2), 0.022, 4, metal);
+    b.tube(L(lx, 0.02, run / 2), L(lx, 0.02, -run / 2), 0.02, 4, metal);
+  }
+  // ballon couché en haut des capteurs
+  b.tube(L(-1.05, 0.32 + rise + 0.32, -run / 2 - 0.12), L(1.05, 0.32 + rise + 0.32, -run / 2 - 0.12), 0.24, 10, { kind: K.METAL, color: 0xeef0f0 });
+  for (const lx of [-0.7, 0.7]) b.tube(L(lx, 0.32 + rise + 0.1, -run / 2), L(lx, 0.32 + rise + 0.12, -run / 2 - 0.12), 0.03, 4, metal);
+  ao(ctx, x, z, 2.6, run + 0.8, y, 0.6, rot);
+}

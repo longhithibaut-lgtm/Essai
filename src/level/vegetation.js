@@ -186,9 +186,10 @@ export function bush(ctx, x, y, z, o = {}) {
   const n = o.blobs ?? 3;
   for (let i = 0; i < n; i++) {
     const a = rand() * Math.PI * 2, d = rand() * r * 0.45;
-    blob(ctx, x + Math.cos(a) * d, y + r * (0.5 + rand() * 0.25), z + Math.sin(a) * d, r * (0.6 + rand() * 0.3), pick(colors, rand), center, { detail: o.lite ? 0 : 1, height: r, sway: 0.2, dim: 0.9 });
+    const fy = o.flat ? 0.6 : 1;
+    blob(ctx, x + Math.cos(a) * d * (o.flat ? 2.2 : 1), y + r * (0.5 + rand() * 0.25) * fy, z + Math.sin(a) * d * (o.flat ? 2.2 : 1), r * (0.6 + rand() * 0.3), pick(colors, rand), center, { detail: o.lite ? 0 : 1, height: r, sway: 0.2, dim: 0.9, sy: o.flat ? 0.5 : 0.85 });
   }
-  cards(ctx, center, r * 1.02, r * 0.75, r * 1.02, Math.floor((o.lite ? 6 : 14) + r * (o.lite ? 14 : 30)), colors, { size: 0.32 + r * 0.25, sway: 0.4 });
+  cards(ctx, center, r * (o.flat ? 1.5 : 1.02), r * (o.flat ? 0.45 : 0.75), r * (o.flat ? 1.5 : 1.02), Math.floor((o.lite ? 6 : 14) + r * (o.lite ? 14 : 30)), colors, { size: 0.32 + r * 0.25, sway: 0.4 });
   if (o.flowers) {
     const fc = o.flowers;
     cards(ctx, center, r * 1.05, r * 0.78, r * 1.05, Math.floor((o.lite ? 3 : 6) + r * (o.lite ? 8 : 14)), Array.isArray(fc) ? fc : [fc], { size: 0.22 + r * 0.2, region: ATLAS.blossom, sway: 0.4, upBias: 0.5 });

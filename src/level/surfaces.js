@@ -624,8 +624,16 @@ const ARCH_FRAG_HEAD = /* glsl */ `
         // propre au bord où la pluie lave
         float de = min(min(uv.x, W - uv.x), min(uv.y, H - uv.y));
         float dirt = smoothstep(0.35, 0.75, texture2D(uNoise, vWPos.xz * 0.21 + seed).g * 0.6 + texture2D(uNoise, vWPos.xz * 0.06).r * 0.4);
-        col *= 1.0 - 0.15 * dirt * smoothstep(0.03, 0.2, de);
+        col *= 1.0 - 0.22 * dirt * smoothstep(0.03, 0.2, de);
         col = mix(col, col * vec3(0.9, 0.92, 0.8), smoothstep(0.7, 0.85, big) * 0.5);
+        // lichens gris-vert et petites croûtes sombres semés sur les dessus abrités
+        vec2 lp = vWPos.xz * 2.3;
+        vec2 li = floor(lp);
+        float lhh = aHash(li + 13.1 + seed);
+        vec2 lo = (vec2(fract(lhh * 7.3), fract(lhh * 3.9)) - 0.5) * 0.4;
+        float lr = 0.12 + 0.2 * fract(lhh * 13.1);
+        float lich = (1.0 - smoothstep(lr - 0.06, lr, length(fract(lp) - 0.5 - lo))) * step(0.9, lhh) * (1.0 - smoothstep(0.02, 0.07, max(fwp.x, fwp.y)));
+        col = mix(col, col * (fract(lhh * 29.0) > 0.7 ? vec3(0.62, 0.6, 0.58) : vec3(0.85, 0.88, 0.72)), lich * 0.8);
       }
       if (isSide > 0.5 && W > 1.0 && H > 0.45) {
         // mouchetis de l'enduit et reprises : rectangles refaits, un ton plus clair ou plus gris

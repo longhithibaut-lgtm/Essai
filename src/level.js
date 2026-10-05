@@ -135,6 +135,8 @@ export function buildLevel(scene, physics, materials) {
   A.boxMinMax(2.93, -9, -43, 3.0, 7.0, -31, { kind: K.CORAL, color: PAL.coral });
   // L'angle corail se voit de loin depuis le départ
   A.boxMinMax(2.93, -9, -31.0, 4.4, 6.38, -30.895, { kind: K.CORAL, color: PAL.coral });
+  // couvertine de zinc sur l'angle, qui déborde un peu et goutte
+  A.boxMinMax(2.9, 6.38, -31.02, 4.43, 6.43, -30.865, { kind: K.METAL, color: PAL.zinc, bevel: 0.01 });
   // Bandeaux corail en léger relief sous le niveau de la terrasse, hors de portée des
   // mains : on les voit filer en franchissant le vide
   for (const [y0, y1] of [[1.42, 1.64], [-3.3, -3.08]]) {
@@ -148,7 +150,20 @@ export function buildLevel(scene, physics, materials) {
   facadeDress(ctx, bWR, '+z', { floors: 4, balcony: 0, flowers: 0.35, ivy: 1, ivyRange: [0.55, 0.85], minY: -10 });
   // Colonne de pierre élancée, côté gauche
   B({ minX: -5.3, maxX: -3.9, minZ: -37.7, maxZ: -36.3, top: 5.5, plain: true, sideKind: K.STONE, color: PAL.stone, corniceOver: 0.12 });
-  cypress(deco, -4.6, 5.5, -37.0, { h: 3.2, r: 0.5 });
+  // ... coiffée d'une vasque fleurie dont les rameaux retombent (l'ancien cyprès est
+  // encore tiré, puis jeté, pour que la suite du décor garde sa place)
+  cypress({ ...deco, arch: new Batch(), foliage: new Batch() }, -4.6, 5.5, -37.0, { h: 3.2, r: 0.5 });
+  {
+    const uctx = { ...deco, rand: rng(23) };
+    A.cylinder(-4.6, 5.5, -37.0, 0.26, 0.34, 0.14, 14, { kind: K.STONE, color: PAL.coping, caps: true });
+    A.cylinder(-4.6, 5.64, -37.0, 0.12, 0.16, 0.12, 12, { kind: K.STONE, color: PAL.coping });
+    A.cylinder(-4.6, 5.76, -37.0, 0.52, 0.2, 0.46, 16, { kind: K.TERRA, color: PAL.terra, caps: false });
+    A.cylinder(-4.6, 6.2, -37.0, 0.56, 0.56, 0.06, 16, { kind: K.TERRA, color: 0xc97f63, caps: false });
+    A.cylinder(-4.6, 6.18, -37.0, 0.52, 0.52, 0.02, 16, { kind: K.SOIL, color: 0x6b5444 });
+    bush(uctx, -4.6, 6.12, -37.0, { r: 0.62, kind: 'leaf', flowers: [0xf4a3b5, 0xe48fa0, 0xfaf3ff] });
+    ivy(uctx, -4.6, 6.24, -36.48, 0.8, 1.3, 0, 1, { over: 0.15, flowers: [0xf4a3b5] });
+    ivy(uctx, -4.08, 6.24, -37.0, 0.7, 1.0, 1, 0, { over: 0.15 });
+  }
 
   // =====================================================================
   // E : terrasse de la pergola (glissade), puis mur d'escalade
@@ -318,6 +333,7 @@ export function buildLevel(scene, physics, materials) {
   const bW2 = B({ minX: -3, maxX: 5, minZ: -148, maxZ: -136, top: 5.6, style: 0.64, color: PAL.plasterWarm, tag: 'wallrun', faces: ['+z', '-z', '-x'], quoins: false, corniceOver: 0.25 });
   A.boxMinMax(5.0, -9, -148, 5.07, 5.6, -136, { kind: K.CORAL, color: PAL.coral });
   A.boxMinMax(3.6, -9, -136.0, 5.07, 4.98, -135.92, { kind: K.CORAL, color: PAL.coral });
+  A.boxMinMax(3.57, 4.98, -136.02, 5.1, 5.03, -135.89, { kind: K.METAL, color: PAL.zinc, bevel: 0.01 });
   roofDress(deco, bW2, { garden: true });
   facadeDress(ctx, bW2, '+z', { floors: 3, balcony: 0, flowers: 0.3, ivy: 1, ivyRange: [0.2, 0.5], minY: -8 });
 
@@ -370,6 +386,7 @@ export function buildLevel(scene, physics, materials) {
   // jardinière appareillée en vrais blocs (joints en V lisibles même à contre-jour)
   const stoneRand = rng(91);
   blockWall(A, 6.0, K_TOP, -153.8, 12.0, K_TOP + 0.84, -153.0, { rows: 2, block: 1.25, rand: stoneRand });
+  shadows.add(9.0, -153.4, 6.6, 1.5, K_TOP, 0.95);
   A.boxMinMax(5.95, K_TOP + 0.84, -153.85, 12.05, K_TOP + 0.9, -152.95, { kind: K.CORAL, color: PAL.coral, bevel: 0.018 });
   ctx.solid([6.0, K_TOP, -153.8], [12.0, K_TOP + 0.9, -153.0], 'vault');
   for (const x of [5.5, 12.5]) {
@@ -396,6 +413,7 @@ export function buildLevel(scene, physics, materials) {
   }
   // Obstacle 3 : banc-jardinière bas
   blockWall(A, 6.5, K_TOP, -166.6, 11.0, K_TOP + 0.56, -166.0, { rows: 1, block: 0.95, rand: stoneRand });
+  shadows.add(8.75, -166.3, 5.1, 1.3, K_TOP, 0.9);
   A.boxMinMax(6.45, K_TOP + 0.56, -166.65, 11.05, K_TOP + 0.62, -165.95, { kind: K.CORAL, color: PAL.coral, bevel: 0.018 });
   ctx.solid([6.5, K_TOP, -166.6], [11.0, K_TOP + 0.62, -166.0], 'vault');
   crate(ctx, 12.3, K_TOP, -158.0, 0.6);

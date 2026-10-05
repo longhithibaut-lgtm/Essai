@@ -1,5 +1,6 @@
 import { K } from './surfaces.js';
-import { PAL, windowGrid, acUnit, waterTank, vent, chimney, antenna, hut, skylight, planter, parapet, shadeSail, banner, awning, laundry, gableRoof, dome, duct } from './props.js';
+import { rng } from './kit.js';
+import { PAL, windowGrid, acUnit, waterTank, vent, chimney, antenna, hut, skylight, planter, parapet, shadeSail, banner, awning, laundry, gableRoof, dome, duct, solarHeater } from './props.js';
 import { tree, cypress, bush, hedge, ivy } from './vegetation.js';
 
 // Habillage automatique des toits et des façades des immeubles voisins.
@@ -219,7 +220,7 @@ export function roofDress(ctx, b, o = {}) {
       place(1.6, (x, z) => {
         const top = planter(pctx, x, y, z, 1.6, 1.6, { batch, h: 0.5 });
         const r = rand();
-        if (far) bush(ctx, x, top, z, { r: 0.9, kind: r < 0.5 ? 'leaf' : 'blossom' });
+        if (far) bush(ctx, x, top, z, { r: 0.75, kind: r < 0.5 ? 'leaf' : 'blossom', flat: true });
         else if (r < 0.35) tree(pctx, x, top, z, { kind: 'blossom', scale: 0.7 + rand() * 0.3 });
         else if (r < 0.7) tree(pctx, x, top, z, { kind: rand() < 0.5 ? 'olive' : 'leaf', scale: 0.7 + rand() * 0.3, petals: false });
         else cypress(pctx, x, top, z, { h: 3.5 + rand() * 2 });
@@ -239,5 +240,17 @@ export function roofDress(ctx, b, o = {}) {
   }
   if (o.hedges && !far) {
     hedge(pctx, x0, z0, x1, z0 + 0.7, y, { h: 0.7 });
+  }
+  // Chauffe-eau solaires, capteurs tournés vers le soleil (tirage à part, en dernier :
+  // le reste du toit ne bouge pas)
+  if (o.solar !== false && area > 30) {
+    const lr = rng(Math.floor(Math.abs(b.minX * 73.1 + b.minZ * 19.7 + y * 5.3)) + 3);
+    if (lr() < (far ? 0.3 : 0.4)) {
+      for (let t = 0; t < 4; t++) {
+        const r = 1.6;
+        const x = x0 + r + lr() * Math.max(0.01, W - 2 * r), z = z0 + r + lr() * Math.max(0.01, D - 2 * r);
+        if (free(x, z, r)) { used.push([x, z, r]); solarHeater(pctx, x, y, z, { batch, rotY: -2.03 }); break; }
+      }
+    }
   }
 }
