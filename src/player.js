@@ -5,8 +5,9 @@ import { FirstPersonBody } from './arms.js';
 //
 // Enveloppe garantie pour le dessin du niveau (au moins celle de la version précédente) :
 // saut à plat ≈ 5,6 m à pleine course, sommet ≈ 1,37 m, saut vers +0,5 m ≈ 4,9 m,
-// course murale > 12 m sans perdre d'altitude, escalade ≈ 2,7 m + 1,55 m d'allonge,
-// franchissement jusqu'à 1,2 m, glissade sous 1,1 m.
+// course murale > 12 m sans perdre d'altitude, escalade ≈ 3 m puis prise du rebord jusqu'à
+// 1,95 m au-dessus des pieds (1,55 m depuis un saut), franchissement jusqu'à 1,2 m,
+// glissade sous 1,1 m.
 export const PARAMS = {
   radius: 0.3,
   height: 1.8,
@@ -49,12 +50,22 @@ export const PARAMS = {
   wallJumpOut: 6.0,
   wallJumpUp: 7.6,
 
-  climbSpeed: 6.0,
-  climbTime: 0.65,
-  mantleReach: 1.55,
+  // Escalade : on court sur le mur par appuis successifs (la vitesse pulse à chaque
+  // poussée de pied), les mains claquent sur le mur puis attrapent le rebord.
+  climbSpeed: 5.4,
+  climbTime: 0.8,
+  climbDecay: 0.5,
+  climbKick: 3.0, // poussées par seconde
+  grabReach: 1.95, // depuis le mur : on attrape le rebord quand il est un peu au-dessus des yeux
+  mantleReach: 1.55, // depuis un saut
   vaultHeight: 1.2,
+  // Rétablissement en trois temps : prise (le corps encaisse son poids), traction jusqu'à
+  // avoir la poitrine au-dessus du rebord, puis bascule par-dessus.
+  pullDepth: 1.17, // fin de traction : pieds à 1,17 m sous le rebord (yeux 0,45 m au-dessus)
+  pullTime: 0.36, // pour une traction complète de 0,65 m
+  pushTime: 0.42,
   mantleTime: 0.5,
-  vaultTime: 0.36,
+  vaultTime: 0.46,
 
   slideMinSpeed: 4.6,
   slideBoost: 1.3,
@@ -77,6 +88,23 @@ function damp(current, target, rate, dt) {
   return current + (target - current) * (1 - Math.exp(-rate * dt));
 }
 
+// Franchissement : part de l'élan absorbé par l'appui sur la main (0 : avance uniforme).
+const VAULT_GATHER = 0.35;
+
+// Vitesse verticale (m/s) à la jonction traction / bascule : le geste reste continu.
+const MANTLE_FLOW = 1.4;
+
+// Interpolation d'Hermite : de p0 à p1, tangentes m0 et m1 (déjà multipliées par la durée).
+function hermite(p0, p1, m0, m1, u) {
+  const u2 = u * u, u3 = u2 * u;
+  return (2 * u3 - 3 * u2 + 1) * p0 + (u3 - 2 * u2 + u) * m0 + (-2 * u3 + 3 * u2) * p1 + (u3 - u2) * m1;
+}
+
+function smooth01(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
 function wrapAngle(a) {
   while (a > Math.PI) a -= Math.PI * 2;
   while (a < -Math.PI) a += Math.PI * 2;
@@ -91,6 +119,7 @@ export class Player {
 
     this.pos = new THREE.Vector3();
     this.prevPos = new THREE.Vector3();
+    this.viewPos = new THREE.Vector3(); // position des pieds interpolée pour l'image (corps, mains)
     this.vel = new THREE.Vector3();
     this.yaw = 0;
     this.pitch = 0;
@@ -139,6 +168,8 @@ export class Player {
       dip: 0,
       heading: 0,
       turn: 0,
+      lastSpeed: 0,
+      accel: 0,
     };
 
     this.body = null;
@@ -162,6 +193,7 @@ export class Player {
   spawn(x, y, z, yaw = 0) {
     this.pos.set(x, y, z);
     this.prevPos.copy(this.pos);
+    this.viewPos.copy(this.pos);
     this.vel.set(0, 0, 0);
     this.yaw = yaw;
     this.pitch = 0;
@@ -184,6 +216,8 @@ export class Player {
     this.cam.bobAmount = 0;
     this.cam.turn = 0;
     this.cam.heading = yaw;
+    this.cam.lastSpeed = 0;
+    this.cam.accel = 0;
     this.fallSpeed = 0;
     this.airTime = 0;
     this.bufferTimer = 0;
@@ -404,9 +438,9 @@ export class Player {
     this.jumpAge = 0;
     this.grounded = false;
     this._setMode('air');
-    // La tête accuse un peu l'impulsion
-    this.cam.landVel -= 0.22;
-    this.cam.nodVel += 0.05;
+    // La tête accuse l'impulsion : un léger tassement, puis le regard se lève à peine.
+    this.cam.landVel -= 0.45;
+    this.cam.nodVel += 0.12;
     this.emit('jump');
   }
 
@@ -607,9 +641,11 @@ export class Player {
     this.climbUsed = false;
     this.lastWallNormal = null;
     this.grounded = true;
-    // Atterrissage amorti : la tête s'enfonce un peu et s'incline, puis revient.
-    this.cam.landVel -= Math.min(impact * 0.05, 0.75);
-    this.cam.nodVel -= Math.min(impact * 0.022, 0.32);
+    // Atterrissage amorti : les jambes encaissent, la tête s'enfonce (≈ 10 cm après une
+    // chute d'un mètre) et s'incline vers le sol, puis revient sans rebond.
+    const soft = Math.max(0, impact - 1.5);
+    this.cam.landVel -= Math.min(soft * 0.24, 2.4);
+    this.cam.nodVel -= Math.min(soft * 0.07, 0.7);
     this.emit('land', { impact });
     if ((c.s.slide || this.slideBuffer > 0) && this.speed > this.p.slideMinSpeed) {
       this._setMode('ground');
@@ -757,9 +793,12 @@ export class Player {
       this.emit('walljump', { side: 0 });
       return;
     }
-    if (this._tryMantle(c, p.mantleReach, p.mantleTime, false)) return;
+    if (this._tryMantle(c, p.grabReach, p.mantleTime, false)) return;
     const t = this.modeTime / p.climbTime;
-    v.y = p.climbSpeed * (1 - 0.6 * t);
+    // Chaque appui du pied relance la montée : la vitesse pulse au lieu d'être lisse,
+    // ce qui donne du poids (on pousse, on ralentit, on pousse encore).
+    const kick = 0.8 + 0.4 * Math.max(0, Math.sin(this.modeTime * Math.PI * 2 * p.climbKick + 0.5));
+    v.y = p.climbSpeed * (1 - p.climbDecay * t) * kick;
     v.x = -w.nx * 0.5; v.z = -w.nz * 0.5; // reste plaqué
     this._integrate(c.dt, false);
     const still = this._wallAt(-w.nx, -w.nz, 0.2, 0.2, 0.2);
@@ -828,13 +867,22 @@ export class Player {
     const edge = dx > 0 ? edgeBox.minX : dx < 0 ? edgeBox.maxX : dz > 0 ? edgeBox.minZ : edgeBox.maxZ;
     const keepSpeed = vault ? Math.max(this.speed * 0.95, p.runSpeed * 0.85) : Math.max(3.5, this.speed * 0.5);
     const height = top - this.pos.y;
+    // Rétablissement : traction (si le rebord est haut) puis bascule. La traction amène les
+    // yeux 0,45 m au-dessus du rebord, bras tendus, mains à plat sous le regard.
+    const y1 = Math.max(this.pos.y, top - p.pullDepth);
+    const pullDist = y1 - this.pos.y;
+    const pull = vault ? 0 : 0.12 + p.pullTime * Math.min(1, pullDist / 0.65);
+    const push = vault ? 0 : p.pushTime * (0.75 + 0.25 * Math.min(1, (top - y1) / p.pullDepth));
     // La durée suit un peu la hauteur : un petit muret se passe plus vite qu'un grand.
-    const dur = vault ? duration * (0.85 + 0.25 * Math.min(1, height / p.vaultHeight)) : duration * (0.8 + 0.2 * Math.min(1, height / reach));
+    const dur = vault ? duration * (0.85 + 0.25 * Math.min(1, height / p.vaultHeight)) : pull + push;
     this.mantle = {
       sx: this.pos.x, sy: this.pos.y, sz: this.pos.z,
       ex: this.pos.x + dx * dist, ey: top + EPS, ez: this.pos.z + dz * dist,
       t: 0, duration: dur, dx, dz, keepSpeed, vault,
       height, top, edge,
+      far: dx > 0 ? edgeBox.maxX : dx < 0 ? edgeBox.minX : dz > 0 ? edgeBox.maxZ : edgeBox.minZ,
+      y1, pull, push, v0: Math.min(4, Math.max(0, this.vel.y)), pitch0: this.cam.pitchOffset,
+      phase: pull > 0 ? 'pull' : 'push', u: 0,
     };
     this.wall = null;
     this.vel.set(0, 0, 0);
@@ -849,20 +897,42 @@ export class Player {
     m.t += c.dt;
     const t = Math.min(1, m.t / m.duration);
     if (m.vault) {
-      // Franchissement : avance continue, on monte vite puis on se pose avec un petit rebond.
-      const ty = 1 - Math.pow(1 - Math.min(1, t / 0.55), 3);
-      const hop = Math.sin(Math.PI * t) * 0.1;
-      this.pos.x = m.sx + (m.ex - m.sx) * t;
-      this.pos.z = m.sz + (m.ez - m.sz) * t;
+      // Franchissement : on avance sans s'arrêter, mais le corps reste bas au début, penché
+      // sur la main posée sur le muret, puis pousse et passe par-dessus avec un petit rebond.
+      // L'avance freine en arrivant sur la main (le poids passe dessus), puis repart.
+      const ty = THREE.MathUtils.smootherstep(t, 0.1, 0.72);
+      const hop = Math.sin(Math.PI * t) * 0.08;
+      const tx = t + VAULT_GATHER * t * (t - 1);
+      this.pos.x = m.sx + (m.ex - m.sx) * tx;
+      this.pos.z = m.sz + (m.ez - m.sz) * tx;
       this.pos.y = m.sy + (m.ey - m.sy) * ty + hop;
+    } else if (m.t < m.pull) {
+      // Prise puis traction, plaqué contre le mur. L'élan de l'escalade se prolonge un
+      // instant, le corps s'affaisse un peu dans les bras (on sent son poids), puis on tire.
+      const u = m.t / m.pull;
+      m.phase = 'pull';
+      m.u = u;
+      const d = m.y1 - m.sy;
+      const m0 = Math.min(m.v0 * m.pull, d * 1.2 + 0.04);
+      const sag = -0.055 * Math.sin(Math.PI * THREE.MathUtils.clamp((u - 0.05) / 0.42, 0, 1)) * Math.min(1, 0.4 + d / 0.5);
+      this.pos.x = m.sx;
+      this.pos.z = m.sz;
+      this.pos.y = hermite(m.sy, m.y1, m0, MANTLE_FLOW * m.pull, u) + sag;
     } else {
-      // Rétablissement : on se hisse d'abord, on avance ensuite.
-      const ty = 1 - Math.pow(1 - Math.min(1, t * 1.45), 3);
-      const tf = t < 0.38 ? 0 : (t - 0.38) / 0.62;
-      const tfe = tf * tf * (3 - 2 * tf);
-      this.pos.x = m.sx + (m.ex - m.sx) * tfe;
-      this.pos.z = m.sz + (m.ez - m.sz) * tfe;
-      this.pos.y = m.sy + (m.ey - m.sy) * ty;
+      // Bascule : on passe par-dessus le rebord en avançant, puis on se redresse.
+      const u = Math.min(1, (m.t - m.pull) / m.push);
+      if (m.phase !== 'push') {
+        m.phase = 'push';
+        this.emit('mantlePush');
+      }
+      m.u = u;
+      const m0 = m.pull > 0 ? MANTLE_FLOW * m.push : Math.min(m.v0 * m.push, (m.ey - m.y1) * 1.5);
+      // On bascule vers l'avant d'abord (le buste passe au-dessus des mains), on se
+      // redresse ensuite : le mouvement avant mène, la montée suit.
+      const f = THREE.MathUtils.smootherstep(u, 0, 0.82);
+      this.pos.x = m.sx + (m.ex - m.sx) * f;
+      this.pos.z = m.sz + (m.ez - m.sz) * f;
+      this.pos.y = hermite(m.y1, m.ey, m0, 0, u);
     }
     if (t >= 1) {
       this.pos.y = m.ey;
@@ -876,8 +946,9 @@ export class Player {
       else this._setMode('ground');
       this.grounded = true;
       if (!m.vault) {
-        this.cam.landVel -= 0.12;
-        this.cam.nodVel -= 0.06;
+        // On se redresse sur le rebord : petit tassement, puis la course repart.
+        this.cam.landVel -= 0.6;
+        this.cam.nodVel -= 0.15;
       }
     }
   }
@@ -892,10 +963,18 @@ export class Player {
     const speed = frozen ? 0 : this.speed;
     this.visualSpeed = speed;
     const mode = this.mode;
+    const m = this.mantle;
+
+    // Élan : on se penche un peu en accélérant, on se redresse en freinant.
+    if (dt > 0) {
+      const acc = THREE.MathUtils.clamp((speed - cam.lastSpeed) / dt, -12, 12);
+      cam.accel = damp(cam.accel, mode === 'ground' && !frozen ? acc : 0, 6, dt);
+    }
+    cam.lastSpeed = speed;
 
     // Hauteur des yeux
     const eyeTarget = this.height < p.height ? p.slideEye : p.eye;
-    cam.eye = damp(cam.eye, eyeTarget, 11, dt);
+    cam.eye = damp(cam.eye, eyeTarget, mode === 'slide' ? 9 : 11, dt);
 
     // Rythme des pas
     const onFoot = mode === 'ground';
@@ -909,7 +988,7 @@ export class Player {
       cam.bobPhase += dt * Math.PI * 3.3;
       wallStep = true;
     } else if (mode === 'climb') {
-      cam.bobPhase += dt * Math.PI * 3.0;
+      cam.bobPhase += dt * Math.PI * p.climbKick;
       wallStep = true;
     }
     if (Math.floor(prevPhase / Math.PI) !== Math.floor(cam.bobPhase / Math.PI)) {
@@ -918,25 +997,36 @@ export class Player {
     const ph = cam.bobPhase;
     const sp = Math.sin(ph);
     const a = cam.bobAmount;
-    // Vertical : léger creux à chaque appui, sommet arrondi. Latéral : on se pose sur chaque pied.
-    let bobY = (Math.abs(sp) * 0.55 + sp * sp * 0.45) * 0.04 * a - 0.024 * a;
-    const bobX = Math.cos(ph) * 0.02 * a;
-    const bobRoll = Math.cos(ph) * 0.006 * a;
-    let bobPitch = (Math.abs(sp) - 0.64) * 0.008 * a;
-    if (mode === 'wallrun' || mode === 'climb') {
-      bobY += Math.abs(sp) * 0.016 - 0.008;
-      bobPitch += (Math.abs(sp) - 0.64) * 0.006;
+    // Vertical : creux à chaque appui, sommet arrondi. Latéral : on se pose sur chaque pied,
+    // la tête roule à peine avec le bassin.
+    let bobY = (Math.abs(sp) * 0.55 + sp * sp * 0.45) * 0.046 * a - 0.028 * a;
+    const bobX = Math.cos(ph) * 0.022 * a;
+    const bobRoll = Math.cos(ph) * 0.0075 * a;
+    let bobPitch = (Math.abs(sp) - 0.64) * 0.01 * a;
+    if (mode === 'wallrun') {
+      bobY += Math.abs(sp) * 0.018 - 0.009;
+      bobPitch += (Math.abs(sp) - 0.64) * 0.008;
+    } else if (mode === 'climb') {
+      // Chaque poussée du pied secoue un peu la tête.
+      bobY += Math.abs(sp) * 0.02 - 0.01;
+      bobPitch += (Math.abs(sp) - 0.64) * 0.014;
     }
 
     // Ressorts d'atterrissage (hauteur et inclinaison), en sous-pas pour rester stables.
+    // Hauteur presque critique et assez souple : la tête s'enfonce franchement à la réception
+    // d'un grand saut puis remonte sans rebond.
     let rem = Math.min(dt, 0.1);
     while (rem > 1e-6) {
       const h = Math.min(rem, 1 / 240);
-      cam.landVel += (-cam.landOffset * 110 - cam.landVel * 13) * h;
+      cam.landVel += (-cam.landOffset * 72 - cam.landVel * 15) * h;
       cam.landOffset += cam.landVel * h;
-      cam.nodVel += (-cam.nod * 90 - cam.nodVel * 12) * h;
+      cam.nodVel += (-cam.nod * 80 - cam.nodVel * 13) * h;
       cam.nod += cam.nodVel * h;
       rem -= h;
+    }
+    if (cam.landOffset < -0.2) {
+      cam.landOffset = -0.2;
+      cam.landVel = Math.max(0, cam.landVel);
     }
 
     // Virage : on suit le cap de la vitesse pour pencher très légèrement dans les courbes.
@@ -952,61 +1042,95 @@ export class Player {
     // Roulis
     let rollTarget = 0;
     let shiftTarget = 0;
+    let rollRate = 5;
     if (mode === 'wallrun' && this.wall) {
-      // La tête se penche vers le vide, loin du mur, et s'en écarte un peu.
-      const e = Math.min(1, this.modeTime * 5);
-      rollTarget = this.wall.side * 0.15 * e;
-      shiftTarget = -this.wall.side * 0.07 * e;
+      // La tête se penche franchement vers le vide, loin du mur (≈ 14°), et s'en écarte :
+      // on lit tout de suite qu'on court sur la paroi.
+      const e = smooth01(0, 0.2, this.modeTime);
+      rollTarget = this.wall.side * 0.245 * e;
+      shiftTarget = -this.wall.side * 0.04 * e;
+      rollRate = 11;
     } else if (mode === 'slide') {
-      rollTarget = 0.05;
+      rollTarget = 0.06;
+      rollRate = 6;
+    } else if (mode === 'mantle' && m) {
+      if (m.vault) {
+        // Appui sur la main gauche : la tête part un peu de ce côté, les jambes passent à droite.
+        const t = Math.min(1, m.t / m.duration);
+        rollTarget = 0.07 * Math.sin(Math.PI * Math.min(1, t * 1.2));
+        rollRate = 12;
+      } else if (m.phase === 'push') {
+        // Le genou droit monte sur le rebord : léger déhanché.
+        rollTarget = -0.05 * Math.sin(Math.PI * m.u);
+        rollRate = 9;
+      }
     } else {
       const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
       const lateral = (this.vel.x * rx + this.vel.z * rz) / p.runSpeed;
       rollTarget = -lateral * 0.02;
-      if (onFoot) rollTarget += THREE.MathUtils.clamp(cam.turn * Math.min(1, speed / p.runSpeed) * 0.012, -0.035, 0.035);
+      if (onFoot) rollTarget += THREE.MathUtils.clamp(cam.turn * Math.min(1, speed / p.runSpeed) * 0.014, -0.04, 0.04);
+      // Après une course murale, on se redresse sans à-coup.
+      rollRate = this.lastWall && this.modeTime < 0.6 ? 4 : 5;
     }
-    cam.roll = damp(cam.roll, rollTarget, mode === 'wallrun' ? 7 : 5, dt);
+    cam.roll = damp(cam.roll, rollTarget, rollRate, dt);
     cam.shiftX = damp(cam.shiftX, shiftTarget, 6, dt);
 
     // Inclinaison et creux selon le mouvement
     let pitchTarget = 0;
     let dipTarget = 0;
     let pitchRate = 9;
-    if (mode === 'mantle' && this.mantle) {
-      const m = this.mantle;
-      const t = Math.min(1, m.t / m.duration);
+    let dipRate = 16;
+    if (mode === 'mantle' && m) {
       if (m.vault) {
-        // On plonge le regard vers les mains, le corps se ramasse, puis tout se relève.
-        const e = Math.sin(Math.min(1, t * 1.15) * Math.PI);
-        pitchTarget = -e * 0.26;
-        dipTarget = -e * (0.16 + 0.12 * Math.min(1, m.height / p.vaultHeight));
+        // Le corps plonge tout de suite vers la main posée sur le muret (regard vers elle,
+        // buste ramassé), puis se relève lentement en passant par-dessus.
+        const t = Math.min(1, m.t / m.duration);
+        const e = t < 0.27 ? Math.sin((t / 0.27) * Math.PI * 0.5) : 1 - smooth01(0.27, 1, t);
+        pitchTarget = -e * 0.4;
+        dipTarget = -e * (0.22 + 0.1 * Math.min(1, m.height / p.vaultHeight));
+        pitchRate = 18;
+        dipRate = 18;
+      } else if (m.phase === 'pull') {
+        // Prise : on regarde le rebord (au-dessus des yeux), puis, en se hissant, le regard
+        // plonge de près de 20° vers les mains posées à plat.
+        const look = m.y1 > m.sy + 0.3 ? Math.max(m.pitch0, 0.22) : m.pitch0;
+        pitchTarget = look + (-0.34 - look) * smooth01(0.2, 0.95, m.u);
         pitchRate = 14;
       } else {
-        pitchTarget = -Math.sin(Math.min(1, t * 1.1) * Math.PI) * 0.16;
-        dipTarget = -Math.sin(t * Math.PI) * 0.1;
-        pitchRate = 12;
+        // Bascule : le regard reste sur le rebord pendant qu'on passe par-dessus, puis se relève.
+        pitchTarget = -0.34 * (1 - smooth01(0.22, 0.95, m.u));
+        dipTarget = -0.07 * Math.sin(Math.PI * m.u);
+        pitchRate = 14;
       }
     } else if (mode === 'climb') {
-      // On lève les yeux vers le haut du mur.
-      pitchTarget = 0.15 * Math.min(1, this.modeTime * 4);
-      pitchRate = 7;
+      // On lève les yeux vers le haut du mur, là où les mains vont.
+      pitchTarget = 0.26 * smooth01(0, 0.12, this.modeTime);
+      pitchRate = 14;
     } else if (mode === 'slide') {
       // Regard plus bas pour voir ses jambes filer devant, qui se relève doucement.
-      pitchTarget = -0.21 + 0.06 * Math.min(1, this.modeTime / 0.9);
-      pitchRate = 6;
+      pitchTarget = -0.3 + 0.1 * smooth01(0, 0.9, this.modeTime);
+      pitchRate = 7;
     } else if (mode === 'air') {
       // En retombant de haut, on regarde légèrement vers le point d'arrivée.
-      pitchTarget = THREE.MathUtils.clamp(this.vel.y * 0.006, -0.05, 0.02);
+      pitchTarget = THREE.MathUtils.clamp(this.vel.y * 0.008, -0.07, 0.025);
       pitchRate = 4;
+    } else if (onFoot) {
+      // En pleine course, le buste se penche à peine vers l'avant. Devant un muret, on se
+      // ramasse déjà un peu et le regard descend vers l'endroit où la main va se poser.
+      const va = this.body ? this.body.vaultAhead : 0;
+      pitchTarget = -0.02 * k - 0.1 * va + THREE.MathUtils.clamp(-cam.accel * 0.004, -0.022, 0.018);
+      dipTarget = -0.06 * va;
+      pitchRate = 3 + 6 * va;
     }
     cam.pitchOffset = damp(cam.pitchOffset, pitchTarget, pitchRate, dt);
-    cam.dip = damp(cam.dip, dipTarget, 16, dt);
+    cam.dip = damp(cam.dip, dipTarget, dipRate, dt);
 
     // Champ de vision : fixé à l'horizontale (indépendant du format de l'écran), il s'ouvre
     // un peu avec la vitesse, sans jamais devenir un fish-eye.
     let hfovTarget = p.hfov + p.hfovRun * THREE.MathUtils.clamp((speed - 2) / (p.runSpeed - 2), 0, 1) + Math.max(0, speed - p.runSpeed) * 1.2;
     if (mode === 'slide') hfovTarget += 3;
-    if (mode === 'wallrun') hfovTarget += 2;
+    if (mode === 'wallrun') hfovTarget += 3;
+    if (mode === 'mantle' && m && !m.vault) hfovTarget -= 3; // on se concentre sur le rebord
     hfovTarget = Math.min(hfovTarget, p.hfovMax);
     cam.hfov = damp(cam.hfov, hfovTarget, 3, dt);
     const aspect = this.camera.aspect || 16 / 9;
@@ -1018,6 +1142,7 @@ export class Player {
     const y = this.prevPos.y + (this.pos.y - this.prevPos.y) * alpha;
     const z = this.prevPos.z + (this.pos.z - this.prevPos.z) * alpha;
     const stepY = this.prevStepOffset + (this.stepOffset - this.prevStepOffset) * alpha;
+    this.viewPos.set(x, y + stepY, z);
     const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
     const sx = bobX + cam.shiftX;
 
