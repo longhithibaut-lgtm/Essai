@@ -309,6 +309,10 @@ export class FirstPersonBody {
     this.lastPitch = 0;
     this.lastMode = 'ground';
     this.climbPhase = 0;
+    // Geste vers une lueur ramassée (voir reachFor)
+    this.reachPos = new THREE.Vector3();
+    this.reachT = -1;
+    this.reachSide = 1;
 
     // Temporaires (aucune allocation par image)
     this.camInv = new THREE.Matrix4();
@@ -358,7 +362,25 @@ export class FirstPersonBody {
     if (type === 'vault' || type === 'mantle') this._plantOnLedge(type === 'vault');
   }
 
+  // Une main se tend doucement vers un point du monde (ex. une lueur qu'on ramasse),
+  // puis revient. Appel facultatif depuis le jeu : player.body.reachFor(orb.pos).
+  reachFor(pos) {
+    // Cible gardée dans le repère de la vue : en courant, la lueur est dépassée en un
+    // instant ; la main balaie donc vers l'endroit où on l'a vue, à portée de bras.
+    const tp = this.reachPos.copy(pos).applyMatrix4(this.camInv);
+    this.reachSide = tp.x >= 0 ? 1 : -1;
+    const sh = this.v2.set(SHOULDER.x * this.reachSide, SHOULDER.y, SHOULDER.z);
+    const d = this.v3.subVectors(tp, sh);
+    const len = d.length();
+    if (len > 0.48) tp.copy(sh).addScaledVector(d, 0.48 / len);
+    tp.z = Math.min(tp.z, -0.32);
+    tp.y = THREE.MathUtils.clamp(tp.y, -0.32, 0.05);
+    tp.x = this.reachSide * Math.max(0.14, Math.abs(tp.x));
+    this.reachT = 0;
+  }
+
   reset() {
+    this.reachT = -1;
     for (const h of this.hands) {
       this._poseHidden(h);
       h.pos.copy(h.tPos);
@@ -635,6 +657,26 @@ export class FirstPersonBody {
           release = t > (m.vault ? 0.6 : 0.74);
         }
         if (release) h.anchorActive = false;
+      }
+    }
+
+    // Geste vers une lueur : la main la plus proche s'ouvre et la frôle.
+    if (this.reachT >= 0) {
+      this.reachT += dt;
+      const D = 0.5;
+      if (this.reachT > D || (mode !== 'ground' && mode !== 'air')) this.reachT = -1;
+      else {
+        const w = Math.sin((this.reachT / D) * Math.PI);
+        const h = this.hands[this.reachSide > 0 ? 0 : 1];
+        const tp = this.reachPos;
+        h.tPos.lerp(tp, w);
+        this.f.copy(tp).normalize();
+        this.n.set(-0.4 * h.side, -0.3, -0.85);
+        this._quatFrom(this.f, this.n, this.q1);
+        h.tQuat.slerp(this.q1, w);
+        h.tCurl += (0.05 - h.tCurl) * w;
+        h.tSpread += (0.9 - h.tSpread) * w;
+        h.omega = Math.max(h.omega, 16);
       }
     }
 
