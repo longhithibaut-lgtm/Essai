@@ -222,7 +222,8 @@ async function main() {
       fs.mkdirSync(path.join(out, 'ui'), { recursive: true });
       const p2 = await newPage(browser, base + 'index.html', errors);
       await p2.waitForTimeout(12000);
-      await p2.screenshot({ path: path.join(out, 'ui', 'title.png') });
+      await p2.screenshot({ path: path.join(out, 'ui', 'title.png'), timeout: 120000 });
+      await p2.context().close();
       const p3 = await newPage(browser, base + 'index.html?test', errors);
       await p3.waitForFunction(() => window.__aube && window.__aube.ready, null, { timeout: 180000 });
       await p3.evaluate(() => { const a = window.__aube; a.reset(); a.startBot(); a.step(1.2); });
