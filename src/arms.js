@@ -1575,6 +1575,7 @@ export class FirstPersonBody {
       // Position du poignet à l'écran (-1..1) et distance à l'œil.
       const d = -h.P.z;
       if (d > 0.01) out[key + 's'] = [+(h.P.x / (d * this.tanH)).toFixed(2), +(h.P.y / (d * this.tanV)).toFixed(2), +d.toFixed(2)];
+      out[key + 'c'] = [+h.dCurl.toFixed(2), +h.dSpread.toFixed(2), +h.dHook.toFixed(2)];
       if (h.anchorActive || h.anchorW > 0.05) {
         const wp = this.v1.copy(h.P).applyMatrix4(this.camera.matrixWorld);
         out[key + 'gap'] = +wp.distanceTo(h.anchor).toFixed(3);
