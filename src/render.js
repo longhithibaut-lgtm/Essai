@@ -2,10 +2,14 @@ import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
 // Rendu d'Aube : scène en HDR (MSAA 4x) avec texture de profondeur, puis
-//  - occlusion ambiante (SAO) à demi-résolution, floutée en respectant la profondeur,
+//  - occlusion ambiante (SAO) à demi-résolution, floutée en respectant la profondeur ;
+//    elle n'assombrit que la part de lumière indirecte, que les matériaux écrivent
+//    dans l'alpha (voir atmosphere.js) : recoins creusés, plein soleil intact,
 //  - rais de lumière à demi-résolution quand le soleil est dans le champ,
 //  - halo doux (bloom « dual filter » sur 6 niveaux),
-//  - une passe finale : occlusion, halo, rais, étalonnage, tonalité, vignette, grain.
+//  - moyenne locale à 1/8 pour un contraste local (« clarté ») discret,
+//  - une passe finale : occlusion, halo, rais, clarté, courbe de Lottes, étalonnage
+//    ombres lavande / lumières dorées, vignette, grain.
 // Peu de passes plein écran : seule la scène et la passe finale sont en pleine résolution.
 
 const VS = /* glsl */ `
@@ -67,7 +71,8 @@ const AO_FS = /* glsl */ `
         float f = max(r2 - vv, 0.0);
         sum += f * f * f * max((vn - uBias * z * 0.02 - 0.01) / (0.02 + vv), 0.0);
       }
-      ao = max(0.12, 1.0 - sum * uIntensity * 5.0 / (r2 * r2 * r2 * float(NS)));
+      // Réponse douce : les recoins se creusent sans jamais virer au noir.
+      ao = mix(0.42, 1.0, exp(-sum * uIntensity * 5.0 / (r2 * r2 * r2 * float(NS))));
       ao = mix(ao, 1.0, smoothstep(60.0, 110.0, z));
     }
     gl_FragColor = vec4(ao, z, 0.0, 1.0);
@@ -163,7 +168,8 @@ const UP_FS = /* glsl */ `
 
 // ---------- Passe finale ----------
 const FINAL_FS = /* glsl */ `
-  uniform sampler2D tColor, tAO, tBloom, tRays;
+  uniform sampler2D tColor, tAO, tBloom, tRays, tLocal;
+  uniform float uClarity;
   uniform float uBloom, uExposure, uAO, uVignette, uFade, uTime, uRays;
   uniform vec3 uFadeColor, uSunColor;
   uniform vec3 uAOTint;
@@ -201,6 +207,14 @@ const FINAL_FS = /* glsl */ `
     col *= pow(vec3(max(occ, 0.0)), uAOTint);
     col += texture2D(tBloom, vUv).rgb * uBloom;
     col += uSunColor * texture2D(tRays, vUv).r * uRays;
+    // Clarté : un pixel plus clair que son voisinage (1/8 d'écran) s'éclaire un peu,
+    // un pixel plus sombre se creuse. Le relief et la matière ressortent sans durcir.
+    {
+      float Lp = dot(col, LUM);
+      float Lb = dot(texture2D(tLocal, vUv).rgb, LUM);
+      float k = clamp(pow(max(Lp, 1e-4) / max(Lb, 1e-4), uClarity), 0.72, 1.35);
+      col *= k;
+    }
     col = max(col * uExposure, 0.0);
     // Par canal (les hautes lumières blanchissent comme sur un film), avec une part
     // appliquée à la luminance seule pour ne pas trop saturer les teintes.
@@ -269,10 +283,12 @@ export class Renderer {
       tColor: { value: null },
       tAO: { value: null },
       tBloom: { value: null },
+      tLocal: { value: null },
+      uClarity: { value: 0.22 },
       tRays: { value: null },
       uBloom: { value: 0.16 },
       uExposure: { value: 1.2 },
-      uAO: { value: 1.0 },
+      uAO: { value: 0.9 },
       uAOTint: { value: new THREE.Vector3(1.15, 1.05, 0.8) },
       uRays: { value: 0 },
       uSunColor: { value: new THREE.Color(1.0, 0.82, 0.6) },
@@ -293,7 +309,8 @@ export class Renderer {
     this.finalMat.uniforms.uFadeColor.value.setRGB(1.0, 0.957, 0.918);
 
     // Réglages (utiles pour mesurer le coût de chaque effet, ou pour alléger le rendu).
-    this.settings = { ao: true, bloom: true, rays: true };
+    this.settings = { ao: true, bloom: true, rays: true, clarity: true };
+    this.clarity = 0.22;
     this._createTargets();
     this.envReady = false;
     this._slow = 0;
@@ -314,6 +331,14 @@ export class Renderer {
     this.aoRT = new THREE.WebGLRenderTarget(hw, hh, half);
     this.aoBlurRT = new THREE.WebGLRenderTarget(hw, hh, { type: THREE.HalfFloatType, depthBuffer: false });
     this.raysRT = new THREE.WebGLRenderTarget(hw, hh, { type: THREE.HalfFloatType, depthBuffer: false });
+    // Moyenne locale (1/8) pour la « clarté » : contraste local doux.
+    this.localRTs = [];
+    let lw = w, lh = h;
+    for (let i = 0; i < 3; i++) {
+      lw = Math.max(1, Math.floor(lw / 2));
+      lh = Math.max(1, Math.floor(lh / 2));
+      this.localRTs.push(new THREE.WebGLRenderTarget(lw, lh, { type: THREE.HalfFloatType, depthBuffer: false }));
+    }
     this.bloomRTs = [];
     let bw = w, bh = h;
     for (let i = 0; i < 6; i++) {
@@ -337,6 +362,7 @@ export class Renderer {
     this.aoBlurRT.dispose();
     this.raysRT.dispose();
     for (const rt of this.bloomRTs) rt.dispose();
+    for (const rt of this.localRTs) rt.dispose();
   }
 
   resize() {
@@ -461,8 +487,25 @@ export class Renderer {
     }
     if (set.bloom) this._bloomCleared = false;
 
-    // 5. Final
+    // 5. Moyenne locale (trois réductions, sans seuil)
+    if (set.clarity) {
+      const dm = this.downMat.uniforms;
+      let src = this.sceneRT.texture, sw = w, sh = h;
+      dm.uFirst.value = 0;
+      for (const rt of this.localRTs) {
+        dm.tSrc.value = src;
+        dm.uTexel.value.set(1 / sw, 1 / sh);
+        this._pass(this.downMat, rt);
+        src = rt.texture;
+        sw = rt.width;
+        sh = rt.height;
+      }
+    }
+
+    // 6. Final
     const fu = this.finalMat.uniforms;
+    fu.tLocal.value = this.localRTs[this.localRTs.length - 1].texture;
+    fu.uClarity.value = set.clarity ? this.clarity : 0;
     fu.tColor.value = this.sceneRT.texture;
     fu.tAO.value = this.aoBlurRT.texture;
     fu.tBloom.value = this.bloomRTs[0].texture;

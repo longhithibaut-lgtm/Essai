@@ -332,7 +332,7 @@ export class World {
     sc.near = 1; sc.far = 300;
     sun.shadow.bias = -0.0002;
     sun.shadow.normalBias = 0.03;
-    sun.shadow.radius = 1.6;
+    sun.shadow.radius = 2.0;
     this.scene.add(sun);
     this.scene.add(sun.target);
     this.sun = sun;
