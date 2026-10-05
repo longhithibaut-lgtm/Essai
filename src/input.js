@@ -117,7 +117,12 @@ export class Input {
   }
 
   _pollPad() {
-    const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null;
+    let pads = null;
+    try {
+      pads = navigator.getGamepads ? navigator.getGamepads() : null;
+    } catch {
+      pads = null; // manette interdite par la politique de la page : clavier et souris seulement
+    }
     const now = performance.now();
     const dt = this._padTime ? Math.min(0.1, (now - this._padTime) / 1000) : 0;
     this._padTime = now;

@@ -991,8 +991,8 @@ export class Player {
       pitchTarget = 0.15 * Math.min(1, this.modeTime * 4);
       pitchRate = 7;
     } else if (mode === 'slide') {
-      // Regard un peu plus bas pour voir ses jambes filer devant.
-      pitchTarget = -0.15;
+      // Regard plus bas pour voir ses jambes filer devant, qui se relève doucement.
+      pitchTarget = -0.21 + 0.06 * Math.min(1, this.modeTime / 0.9);
       pitchRate = 6;
     } else if (mode === 'air') {
       // En retombant de haut, on regarde légèrement vers le point d'arrivée.

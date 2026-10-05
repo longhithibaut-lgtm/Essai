@@ -34,12 +34,12 @@ const SHIN_LEN = 0.43;
 // Doigts (main droite) : jointure dans le repère de la main, longueurs des phalanges,
 // écart de base. La paume regarde -y, les doigts vont vers -z, le pouce est côté -x.
 const FINGERS = [
-  { k: [-0.0285, 0.003, -0.097], len: [0.042, 0.026, 0.021], r: 0.0102, spread: 0.07 },
-  { k: [-0.0095, 0.004, -0.101], len: [0.046, 0.029, 0.022], r: 0.0105, spread: 0.015 },
-  { k: [0.0095, 0.003, -0.098], len: [0.043, 0.027, 0.021], r: 0.0101, spread: -0.04 },
-  { k: [0.0275, 0.0, -0.09], len: [0.034, 0.021, 0.019], r: 0.0094, spread: -0.1 },
+  { k: [-0.0285, 0.003, -0.097], len: [0.038, 0.023, 0.018], r: 0.011, spread: 0.07 },
+  { k: [-0.0095, 0.004, -0.101], len: [0.041, 0.025, 0.019], r: 0.0113, spread: 0.015 },
+  { k: [0.0095, 0.003, -0.098], len: [0.038, 0.024, 0.018], r: 0.0109, spread: -0.04 },
+  { k: [0.0275, 0.0, -0.09], len: [0.03, 0.019, 0.016], r: 0.0101, spread: -0.1 },
 ];
-const THUMB = { k: [-0.03, -0.008, -0.024], len: [0.04, 0.032, 0.026], r: 0.0118 };
+const THUMB = { k: [-0.03, -0.008, -0.024], len: [0.038, 0.029, 0.023], r: 0.0124 };
 
 // Index des os
 const ARM_BONES = 18; // bras, avant-bras, main, 4 doigts × 3, pouce × 3
@@ -151,12 +151,12 @@ function buildBodyGeometry() {
     FINGERS.forEach((f, fi) => {
       for (let j = 0; j < 3; j++) {
         const r0 = f.r * (1 - j * 0.08), r1 = f.r * (1 - (j + 1) * 0.08);
-        b.add(capsule(r0, r1, f.len[j], 7, 2), o + B_FINGER + fi * 3 + j, j === 0 ? COLORS.glove : COLORS.skin);
+        b.add(capsule(r0, r1, f.len[j], 8, 2), o + B_FINGER + fi * 3 + j, j === 0 ? COLORS.glove : COLORS.skin);
       }
     });
     for (let j = 0; j < 3; j++) {
       const r0 = THUMB.r * (1 - j * 0.1), r1 = THUMB.r * (1 - (j + 1) * 0.1);
-      b.add(capsule(r0, r1, THUMB.len[j], 7, 2), o + B_THUMB + j, j === 0 ? COLORS.glove : COLORS.skin);
+      b.add(capsule(r0, r1, THUMB.len[j], 8, 2), o + B_THUMB + j, j === 0 ? COLORS.glove : COLORS.skin);
     }
   }
   // Jambes : cuisse, tibia, chaussure.
@@ -164,18 +164,22 @@ function buildBodyGeometry() {
     const o = LEG_BASE + side * 3;
     b.add(capsule(0.078, 0.06, THIGH_LEN, 10, 3), o, COLORS.pants);
     b.add(capsule(0.06, 0.046, SHIN_LEN, 10, 3), o + 1, (x, y, z) => (z < -SHIN_LEN + 0.03 ? COLORS.sleeveRoll : COLORS.pants));
-    const shoe = new RoundedBoxGeometry(0.118, 0.09, 0.28, 2, 0.04);
-    const sp = shoe.attributes.position;
-    for (let i = 0; i < sp.count; i++) {
-      // Bout arrondi plus étroit, talon plus haut.
-      const z = sp.getZ(i);
-      const t = (z + 0.135) / 0.27; // 0 à la pointe, 1 au talon
-      sp.setX(i, sp.getX(i) * (0.82 + 0.18 * Math.min(1, t * 2.2)));
-      if (sp.getY(i) > 0) sp.setY(i, sp.getY(i) * (0.7 + 0.5 * t));
+    // Chaussure : semelle claire un peu plus large (on en voit le liseré d'en haut),
+    // dessus corail qui s'affine vers la pointe.
+    const sole = new RoundedBoxGeometry(0.116, 0.03, 0.29, 2, 0.013);
+    sole.translate(0, -0.083, -0.08);
+    b.add(sole, o + 2, COLORS.sole);
+    const upper = new RoundedBoxGeometry(0.1, 0.08, 0.255, 2, 0.034);
+    const up = upper.attributes.position;
+    for (let i = 0; i < up.count; i++) {
+      const z = up.getZ(i);
+      const t = (z + 0.1275) / 0.255; // 0 à la pointe, 1 au talon
+      up.setX(i, up.getX(i) * (0.84 + 0.16 * Math.min(1, t * 2)));
+      if (up.getY(i) > 0) up.setY(i, up.getY(i) * (0.45 + 0.75 * t));
     }
-    shoe.computeVertexNormals();
-    shoe.translate(0, -0.05, -0.075);
-    b.add(shoe, o + 2, (x, y, z) => (y < -0.068 ? COLORS.sole : COLORS.shoe));
+    upper.computeVertexNormals();
+    upper.translate(0, -0.035, -0.07);
+    b.add(upper, o + 2, COLORS.shoe);
   }
   return b.build();
 }
@@ -569,7 +573,7 @@ export class FirstPersonBody {
           const fx = -rz, fz = rx;
           const planeDist = touchDist * Math.abs(fx * hit.nx + fz * hit.nz);
           this.v4.set(rx * 0.2 * h.side, 0, rz * 0.2 * h.side);
-          this._poseOnWall(h, cp.x, cp.y, cp.z, hit.nx, hit.nz, planeDist, 0, this.v4, -0.16 + 0.03 * h.side, 0, 0, 0.15, 14);
+          this._poseOnWall(h, cp.x, cp.y, cp.z, hit.nx, hit.nz, planeDist, 0, this.v4, -0.3 + 0.03 * h.side, 0, 0, 0.2, 12);
         } else if (this.brush[h.side > 0 ? 0 : 1] < 0.6) {
           // Doigts qui glissent sur le mur, un peu devant, au rythme des pas.
           const i = h.side > 0 ? 0 : 1;
@@ -807,9 +811,10 @@ export class FirstPersonBody {
       const s = side === 0 ? 1 : -1;
       const o = LEG_BASE + side * 3;
       // Hanche
-      S.set(gx + rx * 0.11 * s - dx * 0.02, gy + 0.4, gz + rz * 0.11 * s - dz * 0.02);
+      const hipLat = s > 0 ? 0.2 : 0.12;
+      S.set(gx + rx * hipLat * s - dx * 0.02, gy + 0.4, gz + rz * hipLat * s - dz * 0.02);
       let fwd, lat, h;
-      if (s > 0) { fwd = 0.84; lat = 0.2; h = 0.2; } else { fwd = 0.3; lat = 0.25; h = 0.06; }
+      if (s > 0) { fwd = 0.88; lat = 0.02; h = 0.15; } else { fwd = 0.3; lat = 0.25; h = 0.06; }
       fwd -= tuck * 0.7;
       h -= tuck * 0.1;
       const ankle = this.v1.set(gx + dx * fwd + rx * lat * s, gy + h, gz + dz * fwd + rz * lat * s);
@@ -825,7 +830,7 @@ export class FirstPersonBody {
       this._setSegment(o + 1, E, T, up);
       // Pied : tendu, pointe vers le haut ; replié, à plat.
       if (s > 0) {
-        this.f.set(dx * 0.85 + rx * 0.32, 0.42, dz * 0.85 + rz * 0.32);
+        this.f.set(dx * 0.8 + rx * 0.1, 0.55, dz * 0.8 + rz * 0.1);
         this.n.set(dx * 0.42, -0.9, dz * 0.42);
       } else {
         this.f.set(dx * 0.9 - rx * 0.3, -0.1, dz * 0.9 - rz * 0.3);
