@@ -1,0 +1,68 @@
+{
+ "_lisezmoi": "Arguments du tour 4 pour tools/gauntlet-round.js (outil Workflow de Claude Code). Remplacer les chemins entre chevrons : la barre téléchargée avec npm run bar, un dossier pour les paires à l'aveugle, et un worktree git par morceau créé depuis la branche claude/pensive-clarke-gxx4bb (git worktree add -b gauntlet/r4-<id> <chemin> HEAD).",
+ "round": 4,
+ "bar": "<chemin de .captures/bar>",
+ "blindDir": "<dossier des paires à l'aveugle du tour 4>",
+ "pieces": [
+  {
+   "id": "mouvement",
+   "name": "Mouvement",
+   "files": "src/player.js, src/input.js, src/physics.js, src/arms.js, src/streaks.js",
+   "scope": "how movement feels and reads in first person: run acceleration and momentum, jump arc, wall-run, climb, mantle and vault, slide, landing, head bob, field of view, camera roll and pitch, and the first-person body (arms, hands, fingers, legs in src/arms.js). Speed must feel gentle and flowing, not frantic.",
+   "judge": "the movement sequences frames/wallrunStart_sheet.png, frames/vault_sheet.png, frames/climb_sheet.png, frames/mantle_sheet.png, frames/slideStart_sheet.png, frames/jump_sheet.png (and the individual frames next to them)",
+   "barHint": "10-frame sequences you extract with ffmpeg from video/mirrorsedge_gameplay.mp4, video/mirrorsedge_trailer.mp4 and video/vholume_gameplay.mp4 showing a comparable action (wall-run, vault, climb, slide, jump), built into a 5x2 sheet like ours",
+   "criteria": "which sequence conveys more fluid, readable and satisfying first-person parkour movement: camera motion, sense of speed and weight, presence of the body, arms and hands, contact with surfaces, smoothness",
+   "captureOnly": "route,frames",
+   "notes": "Round 3 is merged. Cladding on the coral walls sits 7 cm proud of the collision boxes and cornices about 10 cm; src/arms.js compensates (CLADDING 0.07, CORNICE 0.115, faceInset). The sideways jolt at the first slide entry comes from the autopilot route (level.js waypoint (-0.5,2,-43.4) right after (2.66,3,-42.5)) and the bot turning at 14 rad/s in testapi.js, not from the controller. This machine has a real GPU: run captures with --gpu (seconds instead of minutes) and measure the real frame rate with #fps in the game URL; keep 60 fps on this machine at 1920x1080 as a hard budget.",
+   "verdict": "Mouvement r3 : battu dans 4 paires sur 5 (seule victoire, non aveugle, contre un extrait VHOLUME faible). Les bras sont enfin là mais ils flottent et saluent sans jamais prendre appui, et le saut n'a aucun poids à la caméra.",
+   "gap": "Les mains gesticulent au lieu de porter le corps : paumes ouvertes, doigts écartés à hauteur du visage, elles ne touchent jamais vraiment la surface (à l'enjambement elles se posent dans le vide au-delà du muret, en glissade elles planent au-dessus du plancher, au saut un bras se lève comme pour saluer, sur le mur la paume flotte devant la paroi). Au contact, la paume doit se plaquer pour de vrai au point d'appui (poignet cassé, avant-bras raccourci vers la surface, caméra qui s'écrase un peu sous le poids) ; en course et en vol, les bras doivent rester bas, mains détendues et à demi fermées, et n'entrer dans le cadre qu'au sommet du balancier.",
+   "path": "<chemin du worktree de ce morceau>",
+   "branch": "gauntlet/r4-mouvement"
+  },
+  {
+   "id": "lumiere",
+   "name": "Lumière et ciel",
+   "files": "src/world.js, src/render.js, src/materials.js, src/atmosphere.js",
+   "scope": "lighting, shadows, exposure, tone curve, sky, fog and atmosphere, cloud sea, the distant city (instanced towers in world.js), colour grading, post-processing, material response of the shared materials. Beautiful and rich like the bar, while staying a soft, soothing dawn.",
+   "judge": "views/depart.png, views/panorama.png, views/mur.png, views/jardin.png, views/ruelle.png, views/cloche.png and a few frames/run_*.png",
+   "barHint": "shots/mirrorsedge_*.jpg and shots/vholume_*.jpg, choosing the closest composition for each of ours",
+   "criteria": "image beauty: lighting quality and value range, depth and atmosphere, colour harmony, material richness and overall polish",
+   "captureOnly": "views,route,frames",
+   "notes": "Round 3 is merged. scene.fog.color is repurposed as a per-frame global uniform (wind offset, cloud-shadow strength) written in World.update: nobody else should read or write it. The décor piece kept its contact-shadow quads at 0.36 opacity on purpose; lower them on your side if screen-space occlusion darkens twice. With a real GPU you can now afford and measure better shadows, ambient occlusion and atmosphere. This machine has a real GPU: run captures with --gpu (seconds instead of minutes) and measure the real frame rate with #fps in the game URL; keep 60 fps on this machine at 1920x1080 as a hard budget.",
+   "verdict": "0 sur 6 : ciel azur et or réussi, mais l'image reste délavée et mate, sans masses sombres ni richesse de matière face à Mirror's Edge et VHOLUME.",
+   "gap": "Dans les vues ouvertes (départ, panorama, cascade), soleil et ombre ne se distinguent que par une teinte lilas : façades à l'ombre, dalles et toits restent dans une même nappe crème pâle (médiane 184-185), sans aucune grande masse sombre. Il faut faire descendre les faces opposées au soleil et les ombres portées vers un bleu-gris profond et saturé (luminance 40 à 80) qui encadre les plans ensoleillés comme dans Mirror's Edge 04 et 08, et casser les grandes surfaces claires avec des variations de matière (taches, usure, reflets) au lieu d'un bruit uniforme.",
+   "path": "<chemin du worktree de ce morceau>",
+   "branch": "gauntlet/r4-lumiere"
+  },
+  {
+   "id": "decor",
+   "name": "Décor et niveau",
+   "files": "src/level.js and everything under src/level/",
+   "scope": "environment art and level design: readable material at play distance, sculpted architecture, weathering, rooftop equipment on neighbouring roofs, vegetation, props, composition of every view, readability of the path (coral runner vision), and a varied parkour line. Keep viewpoints, checkpoints (with titles), orbs, hints and the autopilot route consistent (verify the autopilot still finishes).",
+   "judge": "views/*.png (depart, panorama, mur, pergola, jardin, cascade, ruelle, cloche) and frames/run_*.png",
+   "barHint": "shots/mirrorsedge_*.jpg and shots/vholume_*.jpg, plus frames/ from the gameplay videos, choosing the closest composition",
+   "criteria": "environment art and level design: architecture and detail density, material at play distance, weathering, composition, sense of place, readability of the parkour line",
+   "captureOnly": "views,route,frames",
+   "notes": "Round 3 is merged. Requests from other pieces: in src/level/surfaces.js clamp the Fresnel base, pow(clamp(1.0 - max(dot(-V, n), 0.0), 0.0, 1.0), 4.0), which can go NaN head-on and gives black pixels on glass; make window interiors darker (near vec3(0.05,0.06,0.09)) to give the image real darks; add visible vertical panel joints on the coral wall-run cladding so speed reads along it; keep cladding thickness unchanged (the arms compensate). The interface's title and end shots frame the garden, the palace, the campanile and the aqueduct (src/titlecam.js): re-check them if those move. This machine has a real GPU: run captures with --gpu (seconds instead of minutes) and measure the real frame rate with #fps in the game URL; keep 60 fps on this machine at 1920x1080 as a hard budget.",
+   "verdict": "Perdu (4 paires gagnées sur 7, dont une mal appariée et une contre une image vidéo floue) : de près, l'enduit, le mur de course et les passerelles tiennent la barre, mais les toits vus de haut et la ville lointaine restent pauvres et délavés face à Mirror's Edge, et les façades de la ruelle sont plates face à VHOLUME.",
+   "gap": "Au-delà de la première rangée, les toits sont de grandes dalles grises presque vides et la ville est un amas de blocs beiges délavés, sans fenêtres sombres ni silhouettes. Il faut garnir chaque toit voisin d'équipements instanciés (climatiseurs, gaines, cheminées, réservoirs, antennes, acrotères de hauteurs variées) et réduire la brume entre 30 et 200 m, pour que ces bâtiments gardent ombres portées, fenêtres foncées et contraste de valeurs comme chez Mirror's Edge.",
+   "path": "<chemin du worktree de ce morceau>",
+   "branch": "gauntlet/r4-decor"
+  },
+  {
+   "id": "interface",
+   "name": "Interface et ambiance",
+   "files": "index.html, style.css, src/ui.js, src/audio.js, src/birds.js, src/titlecam.js",
+   "scope": "presentation and ambiance: composed title and end shots, HUD, hints, pause and end screens, onboarding, typography, transitions, and the generative calm soundscape. The UI must feel like a finished, soothing game, not a web page.",
+   "judge": "ui/title.png, ui/hud.png, ui/pause.png, ui/end.png",
+   "barHint": "title cards, logos, menus and HUD moments in the trailers (extract full-size frames with ffmpeg), plus in-game screenshots for the HUD",
+   "criteria": "presentation quality: typography, composition and depth of the title shot, legibility, polish, coherence with the game's world, clarity and restraint of the HUD",
+   "captureOnly": "ui",
+   "notes": "Round 3 is merged. style.css applies filter: contrast(1.08) saturate(1.1) on #game only on the title and end screens. This machine has a real GPU: run captures with --gpu (seconds instead of minutes) and measure the real frame rate with #fps in the game URL; keep 60 fps on this machine at 1920x1080 as a hard budget.",
+   "verdict": "Échec 2/4 : le plan titre et la retenue du HUD battent VHOLUME, mais l'écran de fin, au texte haché par l'aqueduc, perd contre la carte de Mirror's Edge, et le HUD perd contre Mirror's Edge, que des mains en blocs et une image laiteuse font paraître inachevé.",
+   "gap": "Sur l'écran de fin (et dans le menu titre), le texte secondaire repose directement sur une géométrie chargée : le bloc Lueurs/Promenade, « Ta première promenade » et « Revenir au titre » sont tranchés par le tablier et les arches de l'aqueduc, et « Commandes »/« Réglages » chevauchent les bâtiments, si bien que la lecture se brouille. Il faut recadrer ces plans pour que toute la colonne de texte de gauche tombe sur le ciel ou la mer de nuages (l'aqueduc descendu sous le dernier bouton ou sorti de la colonne), ou poser derrière ce seul bloc un voile laiteux local et doux, pour que chaque ligne se lise d'un coup d'œil comme sur une carte-titre.",
+   "path": "<chemin du worktree de ce morceau>",
+   "branch": "gauntlet/r4-interface"
+  }
+ ]
+}

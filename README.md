@@ -41,7 +41,7 @@ Les tours 1 à 3 ont tourné dans un conteneur sans carte graphique : chaque cap
    ```
 3. Télécharger la barre (captures et vidéos Steam de VHOLUME et Mirror's Edge, gardées hors du dépôt) : `npm run bar`
 4. Vérifier que tout tourne : `node tools/capture.mjs --gpu --only views,route` (une fenêtre Chromium s'ouvre, les images arrivent dans `.captures/latest/`).
-5. Ouvrir Claude Code dans ce dossier (application Claude Desktop, ou `claude remote-control` dans un terminal pour le suivre depuis l'application Claude Code) et lui demander de lancer le tour 4 avec `tools/gauntlet-round.js`, en partant des écarts du tour 3 notés sur la page Atelier Aube.
+5. Ouvrir Claude Code dans ce dossier (application Claude Desktop, ou `claude remote-control` dans un terminal pour le suivre depuis l'application Claude Code) et lui demander de lancer le tour 4 avec `tools/gauntlet-round.js` et les arguments de `tools/gauntlet-tour4.json` (écarts nommés par les critiques du tour 3 et notes d'intégration entre morceaux).
 
 Pour mesurer les images par seconde en jouant, ajouter `#fps` à l'adresse du jeu.
 
