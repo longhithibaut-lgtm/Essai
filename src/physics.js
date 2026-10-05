@@ -55,4 +55,66 @@ export class PhysicsWorld {
     }
     return best;
   }
+
+  // Lancer de rayon (direction normalisée) contre les boîtes solides.
+  // Renvoie la distance du premier impact (ou Infinity) ; si `hit` est fourni, il reçoit
+  // { dist, nx, ny, nz, box }. Les boîtes qui contiennent l'origine sont ignorées.
+  // Aucune allocation : utilisable à chaque image.
+  raycast(ox, oy, oz, dx, dy, dz, maxDist, hit = null) {
+    let best = maxDist;
+    let bestAxis = -1, bestSign = 0, bestBox = null;
+    const boxes = this.boxes;
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i];
+      if (b.trigger) continue;
+      let tmin = 0, tmax = best, axis = -1, sign = 0;
+      // X
+      if (dx > -1e-9 && dx < 1e-9) {
+        if (ox <= b.minX || ox >= b.maxX) continue;
+      } else {
+        const inv = 1 / dx;
+        let t1 = (b.minX - ox) * inv, t2 = (b.maxX - ox) * inv, s = -1;
+        if (t1 > t2) { const t = t1; t1 = t2; t2 = t; s = 1; }
+        if (t1 > tmin) { tmin = t1; axis = 0; sign = s; }
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) continue;
+      }
+      // Y
+      if (dy > -1e-9 && dy < 1e-9) {
+        if (oy <= b.minY || oy >= b.maxY) continue;
+      } else {
+        const inv = 1 / dy;
+        let t1 = (b.minY - oy) * inv, t2 = (b.maxY - oy) * inv, s = -1;
+        if (t1 > t2) { const t = t1; t1 = t2; t2 = t; s = 1; }
+        if (t1 > tmin) { tmin = t1; axis = 1; sign = s; }
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) continue;
+      }
+      // Z
+      if (dz > -1e-9 && dz < 1e-9) {
+        if (oz <= b.minZ || oz >= b.maxZ) continue;
+      } else {
+        const inv = 1 / dz;
+        let t1 = (b.minZ - oz) * inv, t2 = (b.maxZ - oz) * inv, s = -1;
+        if (t1 > t2) { const t = t1; t1 = t2; t2 = t; s = 1; }
+        if (t1 > tmin) { tmin = t1; axis = 2; sign = s; }
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) continue;
+      }
+      if (axis < 0) continue; // origine à l'intérieur de la boîte
+      if (tmin < best) { best = tmin; bestAxis = axis; bestSign = sign; bestBox = b; }
+    }
+    if (bestAxis < 0) {
+      if (hit) { hit.dist = Infinity; hit.box = null; }
+      return Infinity;
+    }
+    if (hit) {
+      hit.dist = best;
+      hit.nx = bestAxis === 0 ? bestSign : 0;
+      hit.ny = bestAxis === 1 ? bestSign : 0;
+      hit.nz = bestAxis === 2 ? bestSign : 0;
+      hit.box = bestBox;
+    }
+    return best;
+  }
 }
