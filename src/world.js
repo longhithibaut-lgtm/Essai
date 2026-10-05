@@ -170,22 +170,31 @@ const SKY_GLSL = /* glsl */ `
       vec2 suv = rd.xz / (h + 0.11);
       vec2 wind = vec2(uTime * 0.0016, uTime * 0.0006);
       vec2 uv1 = suv * 0.16 + wind;
+      vec2 sdir = normalize(AUBE_SUN_DIR.xz);
       float n = texture2D(tCloud, uv1).a;
       float nd = texture2D(tCloud, uv1 * 3.1 + 0.3).a;
-      float ns = texture2D(tCloud, uv1 + normalize(AUBE_SUN_DIR.xz) * 0.025).a;
-      float dens = n * 0.8 + nd * 0.35;
-      float cov = smoothstep(0.5, 0.78, dens);
+      float nf = texture2D(tCloud, uv1 * 9.7 + 0.61).a;
+      float dens = n * 0.8 + nd * 0.3 + nf * 0.1;
+      // Bords nets mais doux, rongés par le détail fin.
+      float cov = smoothstep(0.57, 0.71, dens);
       cov *= smoothstep(0.015, 0.16, h) * (1.0 - smoothstep(0.45, 0.85, h));
       // Voiles étirés (cirrus) plus haut.
       float ci = texture2D(tCloud, vec2(suv.x * 0.05, suv.y * 0.22) + wind * 0.7 + 0.5).a;
       float cir = smoothstep(0.55, 0.8, ci) * smoothstep(0.05, 0.3, h) * (1.0 - smoothstep(0.6, 1.0, h)) * 0.45;
       float s = max(dot(rd, AUBE_SUN_DIR), 0.0);
-      float lit = clamp(0.55 + (n - ns) * 7.0, 0.0, 1.0);
-      vec3 shade = mix(AUBE_UPPER_COOL * 0.92, AUBE_EARTH_SHADOW, 0.3);
-      vec3 litc = mix(vec3(1.0, 0.86, 0.84), AUBE_HOR_WARM * 1.15, aa);
-      vec3 cc = mix(shade, litc, lit);
+      // Éclairage : la face tournée vers le soleil s'allume, le cœur épais reste lavande.
+      vec2 uvs = uv1 + sdir * 0.022;
+      float ns = texture2D(tCloud, uvs).a * 0.8 + texture2D(tCloud, uvs * 3.1 + 0.3).a * 0.3;
+      float lit = clamp(0.5 + (n * 0.8 + nd * 0.3 - ns) * 6.0, 0.0, 1.0);
+      float thick = smoothstep(0.64, 0.86, dens);
+      vec3 shade = mix(AUBE_UPPER_COOL * 0.88, AUBE_EARTH_SHADOW, 0.35);
+      vec3 litc = mix(vec3(1.0, 0.87, 0.85), AUBE_HOR_WARM * 1.18, aa);
+      vec3 cc = mix(shade, litc, lit * (1.0 - thick * 0.45));
       cc += AUBE_SUN * pow(s, 6.0) * 0.8 * (1.0 - cov * 0.5);
-      col = mix(col, cc, cov * 0.78);
+      col = mix(col, cc, cov * 0.84);
+      // Liseré lumineux sur les bords minces, près du soleil.
+      float rim = cov * (1.0 - smoothstep(0.35, 0.9, cov));
+      col += AUBE_SUN * (pow(s, 4.0) * 0.7 + aa * 0.08) * rim;
       col = mix(col, mix(litc, AUBE_SUN, 0.3) * 1.05, cir * (1.0 - cov));
       cloudMask = cov;
     }
@@ -225,20 +234,29 @@ function skyMaterial(cloudTex, env = false) {
         vec3 rd = normalize(vDir);
         float cm;
         vec3 col = aubeSky(rd, cm);
-        if (uEnv > 0.5 && rd.y >= 0.0) {
-          // L'ambiance vient surtout du bleu du ciel : ombres fraîches, soleil chaud.
-          col = mix(col, AUBE_ZENITH * 1.05, 0.45 * smoothstep(0.0, 0.5, rd.y) + 0.15);
-        }
-        if (uEnv > 0.5 && rd.y < 0.0) {
-          // Pour l'éclairage d'ambiance : la mer de nuages renvoie une lumière claire.
-          vec3 below = mix(${'AUBE_HOR_COOL'} * 0.95, AUBE_HOR_WARM, aubeSunSide(rd) * 0.6) * 0.95;
-          col = mix(col, below, smoothstep(0.0, -0.15, rd.y));
+        if (uEnv > 0.5) {
+          // Éclairage d'ambiance : en haut le bleu-lavande du ciel (ombres fraîches et
+          // nettement plus sombres que le soleil), en bas un rebond tiède et faible.
+          float side = aubeSunSide(rd);
+          vec3 up = AUBE_AMB_SKY * mix(1.0, 0.82, smoothstep(0.0, 0.7, rd.y));
+          up = mix(up, AUBE_HOR_WARM * 0.9, side * side * (1.0 - smoothstep(0.0, 0.35, rd.y)) * 0.45);
+          col = mix(col, up, 0.8);
+          // En bas : surtout du lavande (rues à l'ombre, mer de nuages), un peu de tiède côté soleil.
+          vec3 below = mix(AUBE_AMB_SKY * 0.42, AUBE_AMB_GROUND * 0.5, 0.25 + 0.35 * side);
+          col = mix(col, below, smoothstep(0.02, -0.12, rd.y));
         }
         gl_FragColor = vec4(col, 1.0);
       }
     `,
   });
 }
+
+// ---------- Lumière ----------
+const SUN_INTENSITY = 10;
+const ENV_INTENSITY = 0.26; // ciel filtré (ombres)
+const SHADOW_MAP = 4096;
+const SHADOW_HALF = 52; // demi-côté de la carte d'ombre (m)
+const SHADOW_AHEAD = 30; // décalage du centre devant la caméra (m)
 
 // ---------- Mer de nuages ----------
 const CLOUD_TILE_A = 520; // mètres par motif, grande échelle
@@ -267,6 +285,13 @@ export class World {
     scene.userData.aube = {
       sunDir: this.sunDir,
       sunColor: ATMO.sun,
+      envIntensity: ENV_INTENSITY,
+      // Appelé par le moteur de rendu si la machine peine : carte d'ombre plus légère.
+      lowerShadows: () => {
+        if (this.sun.shadow.mapSize.x <= 2048) return false;
+        this.sun.shadow.mapSize.set(2048, 2048);
+        return true;
+      },
       buildEnvScene: () => {
         const s = new THREE.Scene();
         const m = new THREE.Mesh(new THREE.SphereGeometry(50, 48, 24), skyMaterial(this.cloudTex, true));
@@ -290,23 +315,32 @@ export class World {
   }
 
   _lights() {
-    // Rebond chaud des terrasses claires et des nuages (le ciel vient de l'environnement).
-    const bounce = new THREE.HemisphereLight(0x000000, 0xffd6bd, 0.42);
+    // Le ciel (environnement filtré, voir buildEnvScene) éclaire les ombres en
+    // bleu-lavande ; le soleil, seul, réchauffe. Un rebond tiède très léger
+    // remonte des terrasses claires sous les avancées.
+    const bounce = new THREE.HemisphereLight(0x000000, 0xffcfb0, 0.14);
     this.scene.add(bounce);
     this.bounce = bounce;
 
-    const sun = new THREE.DirectionalLight(ATMO.sun.clone(), 9.5);
+    const sun = new THREE.DirectionalLight(ATMO.sun.clone(), SUN_INTENSITY);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    // Carte d'ombre calée devant la caméra (voir update) : les ombres portées
+    // sculptent aussi le mi-plan, pas seulement les pieds du joueur.
+    sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
     const sc = sun.shadow.camera;
-    sc.left = -34; sc.right = 34; sc.top = 34; sc.bottom = -34;
-    sc.near = 1; sc.far = 240;
-    sun.shadow.bias = -0.00025;
-    sun.shadow.normalBias = 0.035;
-    sun.shadow.radius = 2.2;
+    sc.left = -SHADOW_HALF; sc.right = SHADOW_HALF; sc.top = SHADOW_HALF; sc.bottom = -SHADOW_HALF;
+    sc.near = 1; sc.far = 300;
+    sun.shadow.bias = -0.0002;
+    sun.shadow.normalBias = 0.03;
+    sun.shadow.radius = 1.6;
     this.scene.add(sun);
     this.scene.add(sun.target);
     this.sun = sun;
+    // Repère de l'espace lumière, pour caler la carte d'ombre au texel près.
+    this._lx = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), this.sunDir).normalize();
+    this._ly = new THREE.Vector3().crossVectors(this.sunDir, this._lx).normalize();
+    this._fwd = new THREE.Vector3();
+    this._c = new THREE.Vector3();
   }
 
   _clouds() {
@@ -603,13 +637,21 @@ export class World {
     this.pollenMat.uniforms.uTime.value = this.time;
     this.pollenMat.uniforms.uCam.value.copy(camera.position);
 
-    // L'ombre suit le joueur, par pas réguliers pour éviter le scintillement.
-    const snap = 2;
-    const fx = Math.round(focus.x / snap) * snap;
-    const fy = Math.round(focus.y / snap) * snap;
-    const fz = Math.round(focus.z / snap) * snap;
-    const sd = this.sunDir;
-    this.sun.target.position.set(fx, fy, fz);
-    this.sun.position.set(fx + sd.x * 100, fy + sd.y * 100, fz + sd.z * 100);
+    // La carte d'ombre couvre ce que la caméra regarde : centrée un peu devant
+    // elle, recalée au texel près dans l'espace lumière (pas de scintillement).
+    const fwd = camera.getWorldDirection(this._fwd);
+    fwd.y = 0;
+    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+    fwd.normalize();
+    const c = this._c.copy(camera.position).addScaledVector(fwd, SHADOW_AHEAD);
+    c.y -= 1.6; // à peu près au niveau du sol
+    const texel = (2 * SHADOW_HALF) / this.sun.shadow.mapSize.x;
+    const lx = this._lx, ly = this._ly, sd = this.sunDir;
+    const u = Math.round(c.dot(lx) / texel) * texel;
+    const v = Math.round(c.dot(ly) / texel) * texel;
+    const w = c.dot(sd);
+    c.set(0, 0, 0).addScaledVector(lx, u).addScaledVector(ly, v).addScaledVector(sd, w);
+    this.sun.target.position.copy(c);
+    this.sun.position.copy(c).addScaledVector(sd, 150);
   }
 }

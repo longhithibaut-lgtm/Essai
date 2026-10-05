@@ -50,9 +50,9 @@ const AO_FS = /* glsl */ `
     vec3 N = normalize(cross(dx, dy));
 
     float z = -P.z;
-    float ssR = min(uProjScale * uRadius / z, 70.0);
+    float ssR = min(uProjScale * uRadius / z, 110.0);
     float ao = 1.0;
-    if (ssR > 1.0 && z < 90.0) {
+    if (ssR > 1.0 && z < 110.0) {
       float rnd = bayer4(gl_FragCoord.xy) + 0.03125;
       float r2 = uRadius * uRadius;
       float sum = 0.0;
@@ -67,8 +67,8 @@ const AO_FS = /* glsl */ `
         float f = max(r2 - vv, 0.0);
         sum += f * f * f * max((vn - uBias * z * 0.02 - 0.01) / (0.02 + vv), 0.0);
       }
-      ao = max(0.32, 1.0 - sum * uIntensity * 5.0 / (r2 * r2 * r2 * float(NS)));
-      ao = mix(ao, 1.0, smoothstep(50.0, 90.0, z));
+      ao = max(0.12, 1.0 - sum * uIntensity * 5.0 / (r2 * r2 * r2 * float(NS)));
+      ao = mix(ao, 1.0, smoothstep(60.0, 110.0, z));
     }
     gl_FragColor = vec4(ao, z, 0.0, 1.0);
   }
@@ -166,48 +166,57 @@ const FINAL_FS = /* glsl */ `
   uniform sampler2D tColor, tAO, tBloom, tRays;
   uniform float uBloom, uExposure, uAO, uVignette, uFade, uTime, uRays;
   uniform vec3 uFadeColor, uSunColor;
-  uniform vec3 uLift, uGain;
-  uniform float uSat, uContrast;
+  uniform vec3 uAOTint;
+  uniform vec3 uShadowTint, uHighTint, uFilmBase;
+  uniform float uSat, uDebug;
   varying vec2 vUv;
 
-  // Tonalité « Khronos PBR Neutral » : fidèle aux teintes, compresse les hautes lumières.
-  vec3 neutral(vec3 color) {
-    const float startCompression = 0.8 - 0.04;
-    const float desaturation = 0.1;
-    float x = min(color.r, min(color.g, color.b));
-    float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
-    color -= offset;
-    float peak = max(color.r, max(color.g, color.b));
-    if (peak < startCompression) return color;
-    const float d = 1.0 - startCompression;
-    float newPeak = 1.0 - d * d / (peak + d - startCompression);
-    color *= newPeak / peak;
-    float g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
-    return mix(color, vec3(newPeak), g);
+  // Courbe de tonalité (Lottes 2016) : pied doux qui creuse les ombres sans les
+  // boucher, épaule longue qui garde le détail des faces au soleil.
+  uniform vec4 uCurve; // contraste a, a*d, b, c
+  uniform float uCurveLum;
+  vec3 tone(vec3 x) {
+    vec3 xa = pow(x, vec3(uCurve.x));
+    return xa / (pow(x, vec3(uCurve.y)) * uCurve.z + uCurve.w);
+  }
+  float tone1(float x) {
+    return pow(x, uCurve.x) / (pow(x, uCurve.y) * uCurve.z + uCurve.w);
   }
   vec3 toSRGB(vec3 c) {
     c = clamp(c, 0.0, 1.0);
     return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
   }
   float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+  const vec3 LUM = vec3(0.2126, 0.7152, 0.0722);
 
   void main() {
-    vec3 col = texture2D(tColor, vUv).rgb;
+    vec4 scene = texture2D(tColor, vUv);
+    vec3 col = scene.rgb;
+    // L'occlusion n'agit que sur la part indirecte (alpha écrit par les matériaux) :
+    // recoins et pieds de murs se creusent dans l'ombre, le plein soleil reste net.
+    float indirect = clamp(scene.a, 0.0, 1.0);
     float ao = texture2D(tAO, vUv).r;
-    col *= mix(1.0, ao, uAO);
+    float occ = 1.0 - indirect * (1.0 - ao) * uAO;
+    // Elle tire vers le bleu-lavande plutôt que vers le gris.
+    col *= pow(vec3(max(occ, 0.0)), uAOTint);
     col += texture2D(tBloom, vUv).rgb * uBloom;
     col += uSunColor * texture2D(tRays, vUv).r * uRays;
-    col *= uExposure;
+    col = max(col * uExposure, 0.0);
+    // Par canal (les hautes lumières blanchissent comme sur un film), avec une part
+    // appliquée à la luminance seule pour ne pas trop saturer les teintes.
+    float lin = dot(col, LUM);
+    vec3 perChannel = tone(col);
+    vec3 byLum = col * (tone1(lin) / max(lin, 1e-5));
+    col = min(mix(perChannel, byLum, uCurveLum), vec3(1.0));
 
-    // Étalonnage : ombres lavande, lumières dorées, saturation et contraste doux.
-    float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
-    float t = smoothstep(0.02, 0.9, l);
-    col *= mix(uLift, uGain, t);
-    l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    // Étalonnage en espace d'affichage : ombres bleu-lavande, lumières dorées.
+    float l = dot(col, LUM);
+    col *= mix(uShadowTint, vec3(1.0), smoothstep(0.0, 0.5, l));
+    col *= mix(vec3(1.0), uHighTint, smoothstep(0.4, 1.0, l));
+    l = dot(col, LUM);
     col = max(mix(vec3(l), col, uSat), 0.0);
-    col = 0.2 * pow(col / 0.2, vec3(uContrast));
-
-    col = neutral(col);
+    // Noir doux, jamais d'encre : la base du film est lavande.
+    col = uFilmBase + (1.0 - uFilmBase) * col;
     vec3 srgb = toSRGB(col);
 
     vec2 dv = vUv - 0.5;
@@ -215,6 +224,8 @@ const FINAL_FS = /* glsl */ `
     srgb *= mix(1.0 - uVignette, 1.0, v);
     srgb = mix(srgb, uFadeColor, uFade);
     srgb += (ign(gl_FragCoord.xy + fract(uTime * 7.0) * 37.0) - 0.5) / 255.0 * 1.5;
+    // Réglage : 1 = occlusion seule, 2 = part indirecte (alpha de la scène).
+    if (uDebug > 0.5) srgb = vec3(uDebug > 1.5 ? indirect : ao);
     gl_FragColor = vec4(srgb, 1.0);
   }
 `;
@@ -245,34 +256,39 @@ export class Renderer {
       tDepth: { value: null },
       uProjInv: { value: new THREE.Matrix4() },
       uTexel: { value: new THREE.Vector2() },
-      uRadius: { value: 0.85 },
-      uIntensity: { value: 0.9 },
+      uRadius: { value: 1.1 },
+      uIntensity: { value: 1.8 },
       uBias: { value: 0.5 },
       uProjScale: { value: 1 },
     });
     this.aoBlurMat = mat(AO_BLUR_FS, { tAO: { value: null }, uTexel: { value: new THREE.Vector2() } });
     this.raysMat = mat(RAYS_FS, { tDepth: { value: null }, uSun: { value: new THREE.Vector2() }, uAspect: { value: 1 } });
-    this.downMat = mat(DOWN_FS, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uThreshold: { value: 1.5 }, uKnee: { value: 0.7 }, uFirst: { value: 0 } });
+    this.downMat = mat(DOWN_FS, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uThreshold: { value: 1.9 }, uKnee: { value: 1.0 }, uFirst: { value: 0 } });
     this.upMat = mat(UP_FS, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uWeight: { value: 1 } }, { blending: THREE.AdditiveBlending, transparent: true });
     this.finalMat = mat(FINAL_FS, {
       tColor: { value: null },
       tAO: { value: null },
       tBloom: { value: null },
       tRays: { value: null },
-      uBloom: { value: 0.22 },
-      uExposure: { value: 0.86 },
-      uAO: { value: 0.72 },
+      uBloom: { value: 0.16 },
+      uExposure: { value: 1.2 },
+      uAO: { value: 1.0 },
+      uAOTint: { value: new THREE.Vector3(1.15, 1.05, 0.8) },
       uRays: { value: 0 },
       uSunColor: { value: new THREE.Color(1.0, 0.82, 0.6) },
-      uVignette: { value: 0.16 },
+      uVignette: { value: 0.18 },
       uFade: { value: 0 },
-      uFadeColor: { value: new THREE.Color(0xfff4ea).convertSRGBToLinear().convertLinearToSRGB() },
+      uFadeColor: { value: new THREE.Color() },
       uTime: { value: 0 },
-      uLift: { value: new THREE.Vector3(0.93, 0.95, 1.07) },
-      uGain: { value: new THREE.Vector3(1.04, 1.0, 0.95) },
-      uSat: { value: 1.02 },
-      uContrast: { value: 1.09 },
+      uShadowTint: { value: new THREE.Vector3(0.94, 0.95, 1.06) },
+      uHighTint: { value: new THREE.Vector3(1.01, 1.0, 0.975) },
+      uFilmBase: { value: new THREE.Vector3(0.012, 0.01, 0.02) },
+      uSat: { value: 1.1 },
+      uCurve: { value: new THREE.Vector4() },
+      uCurveLum: { value: 0.62 },
+      uDebug: { value: 0 },
     });
+    this.setCurve(1.45, 0.99, 10, 0.18, 0.2);
     // La couleur de fondu est appliquée en espace d'affichage.
     this.finalMat.uniforms.uFadeColor.value.setRGB(1.0, 0.957, 0.918);
 
@@ -341,7 +357,7 @@ export class Renderer {
     const envScene = src.buildEnvScene();
     const rt = pmrem.fromScene(envScene, 0.02, 0.1, 200, { size: 128 });
     this.scene.environment = rt.texture;
-    this.scene.environmentIntensity = 0.44;
+    this.scene.environmentIntensity = src.envIntensity ?? 0.44;
     pmrem.dispose();
     envScene.traverse((o) => {
       if (o.geometry) o.geometry.dispose();
@@ -355,9 +371,15 @@ export class Renderer {
     this._frames++;
     if (dt > 1 / 48) this._slow++;
     if (this._frames >= 120) {
-      if (this._slow > 40 && this.pixelRatio > 0.75) {
-        this.pixelRatio = Math.max(0.75, this.pixelRatio - 0.125);
-        this.resize();
+      if (this._slow > 40) {
+        // D'abord la carte d'ombre, ensuite seulement la résolution.
+        const src = this.scene.userData.aube;
+        if (src && src.lowerShadows && src.lowerShadows()) {
+          // carte d'ombre allégée
+        } else if (this.pixelRatio > 0.75) {
+          this.pixelRatio = Math.max(0.75, this.pixelRatio - 0.125);
+          this.resize();
+        }
       }
       this._frames = 0;
       this._slow = 0;
@@ -473,6 +495,15 @@ export class Renderer {
       this._pass(this.upMat, this.bloomRTs[i - 1]);
       r.autoClear = true;
     }
+  }
+
+  // Courbe de Lottes : contraste a, épaule d, blanc hdrMax, gris moyen midIn -> midOut.
+  setCurve(a, d, hdrMax, midIn, midOut) {
+    const ad = a * d;
+    const den = (Math.pow(hdrMax, ad) - Math.pow(midIn, ad)) * midOut;
+    const b = (-Math.pow(midIn, a) + Math.pow(hdrMax, a) * midOut) / den;
+    const c = (Math.pow(hdrMax, ad) * Math.pow(midIn, a) - Math.pow(hdrMax, a) * Math.pow(midIn, ad) * midOut) / den;
+    this.finalMat.uniforms.uCurve.value.set(a, ad, b, c);
   }
 
   setFade(v) {
