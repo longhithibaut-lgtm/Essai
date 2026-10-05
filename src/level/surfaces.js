@@ -320,6 +320,12 @@ const ARCH_FRAG_HEAD = /* glsl */ `
       rough = 0.7;
     } else if (kind == 5.0) { // corail
       col *= (0.95 + 0.06 * big);
+      if (isSide > 0.5 && W > 1.5) {
+        // Panneaux peints : joints réguliers, utiles aussi pour sentir la vitesse en course murale
+        float pid = aHash(vec2(floor(uv.x / 1.2), floor(uv.y / 2.4)) + 3.7);
+        float jn = max(aLine(aGridDist(uv.x, 1.2), 0.008, fw.x), aLine(aGridDist(uv.y, 2.4), 0.008, fw.y));
+        col *= (0.97 + 0.05 * pid) * (1.0 - 0.18 * jn);
+      }
       col *= 1.0 + 0.1 * edge;
       emit += col * 0.14;
       rough = 0.62;

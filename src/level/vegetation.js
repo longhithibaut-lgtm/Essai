@@ -156,6 +156,7 @@ export function tree(ctx, x, y, z, o = {}) {
       ctx.arch.box(x + Math.cos(a) * d, y + 0.006, z + Math.sin(a) * d, 0.06, 0.012, 0.05, { kind: K.PLAIN, color: pick(colors, rand), rotY: rand() * 3 });
     }
   }
+  if (ctx.ao) ctx.ao(x, z, 1.1 * s, 1.1 * s, y, 0.7);
   if (o.collide !== false && ctx.physics) ctx.solid([x - 0.22 * s, y, z - 0.22 * s], [x + 0.22 * s, y + h, z + 0.22 * s], 'tree');
 }
 
@@ -208,6 +209,7 @@ export function hedge(ctx, minX, minZ, maxX, maxZ, y, o = {}) {
     blob(ctx, x, y + h * 0.55, z, r * 0.9, pick(o.colors ?? LEAF.hedge, ctx.rand), [x, y + h * 0.3, z], { detail: 1, sx: 1.1, sy: h / r * 0.6, sz: 1.1, height: h, sway: 0.1, dim: 0.82 });
   }
   const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+  if (ctx.ao) ctx.ao(cx, cz, w + 0.5, d + 0.5, y, 0.9);
   cards(ctx, [cx, y + h * 0.55, cz], w / 2 + 0.12, h * 0.52, d / 2 + 0.12, Math.floor((w + d) * 22), o.colors ?? LEAF.hedge, { size: 0.42, sway: 0.2, shell: 0.88 });
 }
 
@@ -230,14 +232,14 @@ export function ivy(ctx, x, y, z, width, length, nx, nz, o = {}) {
   const rand = ctx.rand;
   const tx = -nz, tz = nx; // tangente
   const f = ctx.foliage;
-  const strands = Math.max(2, Math.floor(width / 0.3));
+  const strands = Math.max(2, Math.floor(width / (o.spacing ?? 0.24)));
   const colors = o.colors ?? LEAF.ivy;
   for (let si = 0; si < strands; si++) {
     const s = (si / (strands - 1) - 0.5) * width + (rand() - 0.5) * 0.12;
     // longueur : plus long au centre, irrégulier
     const edge = 1 - Math.pow(Math.abs(s) / (width / 2), 2);
     const L = length * (0.35 + 0.65 * edge) * (0.6 + 0.4 * rand());
-    const n = Math.max(2, Math.floor(L / 0.13));
+    const n = Math.max(2, Math.floor(L / 0.11));
     // touffe qui déborde sur le rebord
     if (o.over) {
       for (let k = 0; k < 2; k++) {
@@ -253,7 +255,7 @@ export function ivy(ctx, x, y, z, width, length, nx, nz, o = {}) {
       const wob = Math.sin(t * 2.3 + si) * 0.05;
       const off = 0.03 + rand() * 0.07 + (k === 0 ? 0.05 : 0);
       const p = [x + tx * (s + wob) + nx * off, y - t, z + tz * (s + wob) + nz * off];
-      const sz = (0.26 + rand() * 0.12) * (1 - 0.35 * (t / L));
+      const sz = (0.3 + rand() * 0.14) * (1 - 0.3 * (t / L));
       const ang = rand() * Math.PI * 2;
       _ax.set(tx * Math.cos(ang), Math.sin(ang), tz * Math.cos(ang)).multiplyScalar(sz / 2);
       _ay.set(-tx * Math.sin(ang) + nx * 0.25, Math.cos(ang), -tz * Math.sin(ang) + nz * 0.25).normalize().multiplyScalar(sz / 2);

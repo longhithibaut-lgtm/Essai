@@ -1,5 +1,5 @@
 import { K } from './surfaces.js';
-import { PAL, buildingStyle, acUnit, waterTank, vent, chimney, antenna, hut, skylight, planter, parapet, railing, shadeSail, banner, awning, laundry, gableRoof, dome, duct } from './props.js';
+import { PAL, buildingStyle, acUnit, waterTank, vent, chimney, antenna, hut, skylight, planter, parapet, shadeSail, banner, awning, laundry, gableRoof, dome, duct } from './props.js';
 import { tree, cypress, bush, hedge, ivy } from './vegetation.js';
 
 // Habillage automatique des toits et des façades des immeubles voisins.
@@ -245,5 +245,4 @@ export function roofDress(ctx, b, o = {}) {
   if (o.hedges && !far) {
     hedge(pctx, x0, z0, x1, z0 + 0.7, y, { h: 0.7 });
   }
-  void railing;
 }

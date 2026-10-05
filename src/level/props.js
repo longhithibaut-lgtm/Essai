@@ -32,6 +32,11 @@ export const PAL = {
 
 const fract = (x) => x - Math.floor(x);
 
+// Ombre de contact douce posée au sol (ctx.ao fourni par le niveau, absent pour la ville lointaine)
+function ao(ctx, cx, cz, w, d, y, k = 1, rotY = 0) {
+  if (ctx.ao) ctx.ao(cx, cz, w, d, y, k, rotY);
+}
+
 export function buildingStyle(st) {
   return {
     band: 1.1 + 0.5 * fract(st * 3.7),
@@ -92,6 +97,16 @@ export function parapet(ctx, x1, z1, x2, z2, top, o = {}) {
   const bz0 = alongX ? minZ - t / 2 : minZ, bz1 = alongX ? minZ + t / 2 : maxZ;
   b.boxMinMax(bx0, top, bz0, bx1, top + h - 0.07, bz1, { kind: K.PLASTER, color: o.color ?? PAL.plaster });
   b.boxMinMax(bx0 - (alongX ? 0 : 0.05), top + h - 0.07, bz0 - (alongX ? 0.05 : 0), bx1 + (alongX ? 0 : 0.05), top + h, bz1 + (alongX ? 0.05 : 0), { kind: o.coral ? K.CORAL : K.STONE, color: o.coral ? PAL.coral : PAL.coping });
+  // Ombre de contact du seul côté où il y a un sol (pas au-dessus du vide)
+  if (ctx.ao && ctx.groundAt) {
+    const mx = (bx0 + bx1) / 2, mz = (bz0 + bz1) / 2;
+    for (const sg of [-1, 1]) {
+      const px = alongX ? mx : mx + sg * (t / 2 + 0.25), pz = alongX ? mz + sg * (t / 2 + 0.25) : mz;
+      if (!ctx.groundAt(px, pz, top)) continue;
+      if (alongX) ao(ctx, mx, mz + sg * t / 2, bx1 - bx0, 0.6, top, 1);
+      else ao(ctx, mx + sg * t / 2, mz, 0.6, bz1 - bz0, top, 1);
+    }
+  }
   if (o.collide !== false && ctx.physics) ctx.solid([bx0, top, bz0], [bx1, top + h, bz1], 'parapet');
 }
 
@@ -131,6 +146,7 @@ export function acUnit(ctx, x, y, z, o = {}) {
   const w = 1.3 * s, h = 0.95 * s, d = 0.85 * s;
   b.box(x, y + 0.06, z, w + 0.1, 0.12, d + 0.1, { kind: K.METAL, color: PAL.metalDark, rotY: rot });
   b.box(x, y + 0.12 + h / 2, z, w, h, d, { kind: K.VENT, color: o.color ?? PAL.metalLight, rotY: rot });
+  ao(ctx, x, z, w + 0.6, d + 0.6, y, 1, rot);
   if (o.collide && ctx.physics) {
     const r = Math.max(w, d) / 2;
     ctx.solid([x - r, y, z - r], [x + r, y + 0.12 + h, z + r], 'prop');
@@ -144,6 +160,7 @@ export function waterTank(ctx, x, y, z, o = {}) {
     b.box(x + lx * r * 0.62, y + leg / 2, z + lz * r * 0.62, 0.1, leg, 0.1, { kind: K.METAL, color: PAL.metalDark });
   }
   b.box(x, y + leg - 0.05, z, r * 1.6, 0.1, r * 1.6, { kind: K.METAL, color: PAL.metalDark });
+  ao(ctx, x, z, r * 2.4, r * 2.4, y, 0.6);
   b.cylinder(x, y + leg, z, r, r, h, 16, { kind: K.WOOD, color: o.color ?? PAL.woodPale, caps: false });
   for (const t of [0.2, 0.55, 0.88]) b.cylinder(x, y + leg + h * t, z, r + 0.025, r + 0.025, 0.05, 16, { kind: K.METAL, color: PAL.metalDark, caps: false });
   b.cylinder(x, y + leg + h, z, 0.05, r + 0.08, 0.7, 16, { kind: K.TERRA, color: o.roof ?? PAL.woodDark });
@@ -185,6 +202,7 @@ export function hut(ctx, x, y, z, o = {}) {
   const cs = Math.cos(rot), sn = Math.sin(rot);
   const L = (lx, lz) => [x + lx * cs + lz * sn, z - lx * sn + lz * cs];
   b.box(x, y + h / 2, z, w, h, d, { kind: K.PLASTER, color: o.color ?? PAL.plasterWarm, rotY: rot });
+  ao(ctx, x, z, w + 0.8, d + 0.8, y, 1, rot);
   b.box(x, y + h + 0.09, z, w + 0.3, 0.18, d + 0.3, { kind: K.STONE, color: PAL.coping, rotY: rot });
   // Porte sur la face +z locale
   const [dx, dz] = L(0, d / 2 + 0.02);
@@ -210,6 +228,7 @@ export function planter(ctx, x, y, z, w, d, o = {}) {
   const b = o.batch ?? ctx.arch;
   const h = o.h ?? 0.55;
   b.box(x, y + h / 2, z, w, h, d, { kind: o.kind ?? K.STONE, color: o.color ?? PAL.stone });
+  ao(ctx, x, z, w + 0.5, d + 0.5, y, 0.9);
   b.box(x, y + h - 0.02, z, w - 0.16, 0.04, d - 0.16, { kind: K.SOIL, color: 0x6b5444 });
   if (o.collide !== false && ctx.physics) ctx.solid([x - w / 2, y, z - d / 2], [x + w / 2, y + h, z + d / 2], 'planter');
   return y + h;
@@ -221,6 +240,7 @@ export function bench(ctx, x, y, z, o = {}) {
   const len = o.len ?? 1.8;
   const cs = Math.cos(rot), sn = Math.sin(rot);
   const L = (lx, lz) => [x + lx * cs + lz * sn, z - lx * sn + lz * cs];
+  ao(ctx, x, z, len + 0.4, 0.9, y, 0.7, rot);
   for (const s of [-1, 1]) {
     const [px, pz] = L(s * (len / 2 - 0.15), 0);
     b.box(px, y + 0.21, pz, 0.08, 0.42, 0.42, { kind: K.METAL, color: PAL.metalDark, rotY: rot });
@@ -245,6 +265,7 @@ export function lantern(ctx, x, y, z, o = {}) {
   const b = o.batch ?? ctx.arch;
   const h = o.h ?? 1.6;
   b.box(x, y + 0.06, z, 0.3, 0.12, 0.3, { kind: K.STONE, color: PAL.stone });
+  ao(ctx, x, z, 0.8, 0.8, y, 0.7);
   b.box(x, y + h / 2, z, 0.12, h, 0.12, { kind: K.WOOD, color: PAL.woodDark });
   b.box(x, y + h + 0.2, z, 0.3, 0.38, 0.3, { kind: K.GLOW, color: PAL.glow });
   for (const [lx, lz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) b.box(x + lx * 0.16, y + h + 0.2, z + lz * 0.16, 0.04, 0.42, 0.04, { kind: K.WOOD, color: PAL.woodDark });
@@ -257,6 +278,7 @@ export function pot(ctx, x, y, z, o = {}) {
   const b = o.batch ?? ctx.arch;
   const r = o.r ?? 0.32, h = o.h ?? 0.5;
   b.cylinder(x, y, z, r, r * 0.75, h, 12, { kind: K.TERRA, color: o.color ?? PAL.terra });
+  ao(ctx, x, z, r * 2.6, r * 2.6, y, 0.8);
   b.cylinder(x, y + h - 0.01, z, r * 0.9, r * 0.9, 0.02, 12, { kind: K.SOIL, color: 0x6b5444 });
   if (o.collide && ctx.physics) ctx.solid([x - r, y, z - r], [x + r, y + h, z + r], 'pot');
   return y + h;
@@ -271,6 +293,7 @@ export function skylight(ctx, x, y, z, w, d, o = {}) {
 export function crate(ctx, x, y, z, s = 0.6, o = {}) {
   const b = o.batch ?? ctx.arch;
   b.box(x, y + s / 2, z, s, s, s, { kind: K.WOOD, color: o.color ?? PAL.woodPale, rotY: o.rotY ?? 0 });
+  ao(ctx, x, z, s + 0.4, s + 0.4, y, 0.8);
 }
 
 // Petite table et deux chaises
@@ -279,6 +302,7 @@ export function cafeSet(ctx, x, y, z, o = {}) {
   b.cylinder(x, y, z, 0.03, 0.03, 0.72, 6, { kind: K.METAL, color: PAL.metalDark, caps: false });
   b.cylinder(x, y + 0.72, z, 0.38, 0.38, 0.03, 14, { kind: K.METAL, color: PAL.metalLight });
   b.cylinder(x, y, z, 0.2, 0.22, 0.03, 10, { kind: K.METAL, color: PAL.metalDark });
+  ao(ctx, x, z, 2.0, 1.2, y, 0.5, rot0(o));
   const rot = o.rotY ?? 0;
   for (const s of [-1, 1]) {
     const cx = x + Math.cos(rot) * s * 0.65, cz = z - Math.sin(rot) * s * 0.65;
@@ -486,6 +510,8 @@ export function duct(ctx, a, c, y, o = {}) {
     if (i > 0 && i < n) b.box(px, hy, pz, 0.05, s + 0.04, s + 0.04, { kind: K.METAL, color: PAL.metal, rotY: rot });
   }
 }
+
+function rot0(o) { return o.rotY ?? 0; }
 
 function toRGB(hex) {
   const c = new THREE.Color(hex);

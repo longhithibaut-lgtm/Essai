@@ -9,6 +9,7 @@ import { tree, cypress, bush, hedge, lavender, ivy, grass, wisteria } from './le
 import { roofDress, facadeDress } from './level/dress.js';
 import { buildCity, aqueduct } from './level/city.js';
 import { Signs } from './level/signs.js';
+import { ContactShadows } from './level/ao.js';
 
 // Le parcours : des terrasses blanches posées sur de hautes tours, au-dessus des
 // nuages, dans une ville calme. Le joueur avance vers -z. Collisions : boîtes alignées.
@@ -33,6 +34,9 @@ export function buildLevel(scene, physics, materials) {
     rand,
     solid(min, max, tag) { physics.add(min, max, { tag }); },
   };
+  const shadows = new ContactShadows();
+  ctx.ao = (cx, cz, w, d, y, k, rotY) => shadows.add(cx, cz, w, d, y, k, rotY);
+  ctx.groundAt = (x, z, y) => Math.abs(physics.groundBelow(x, y + 0.05, z, 0.02) - y) < 0.06;
   const deco = { ...ctx, physics: null }; // mêmes lots, sans collision
   const A = ctx.arch;
   const keepOut = [];
@@ -426,6 +430,21 @@ export function buildLevel(scene, physics, materials) {
   A.box(8.5, N_TOP + 3.8, -200, 3.2, 0.2, 3.0, { kind: K.PLASTER, color: PAL.coping });
   A.box(8.5, N_TOP + 4.0, -200, 1.6, 0.22, 1.4, { kind: K.CORAL, color: PAL.coralSoft });
   A.box(8.5, N_TOP + 3.12, -200, 0.12, 0.2, 0.12, { kind: K.METAL, color: PAL.metalDark });
+  // Socle de pierre, lanternes suspendues aux angles du toit
+  A.boxMinMax(6.2, N_TOP, -202.3, 10.8, N_TOP + 0.14, -197.7, { kind: K.STONE, color: PAL.coping });
+  ctx.solid([6.2, N_TOP, -202.3], [10.8, N_TOP + 0.14, -197.7], 'plinth');
+  for (const [px, pz] of [[6.2, -197.8], [10.8, -197.8], [6.2, -202.2], [10.8, -202.2]]) {
+    A.tube([px, N_TOP + 3.2, pz], [px, N_TOP + 2.75, pz], 0.01, 3, { kind: K.METAL, color: PAL.metalDark });
+    A.box(px, N_TOP + 2.6, pz, 0.2, 0.28, 0.2, { kind: K.GLOW, color: PAL.glow });
+    A.box(px, N_TOP + 2.77, pz, 0.26, 0.05, 0.26, { kind: K.WOOD, color: PAL.woodDark });
+  }
+  // Rubans de vœux noués sous l'avant-toit
+  for (let i = 0; i < 14; i++) {
+    const t = i / 13;
+    const x = 6.6 + t * 3.8, z = -197.75 - (i % 2) * 0.05;
+    const col = PAL.fabrics[i % PAL.fabrics.length];
+    ctx.fabric.cloth((s, tt) => [x + (s - 0.5) * 0.08, N_TOP + 3.18 - tt * (0.5 + (i % 3) * 0.12), z], 1, 3, { color: col, pin: (s, tt) => tt });
+  }
   for (const [x0, x1] of [[2.6, 6.6], [10.4, 14.4]]) {
     A.boxMinMax(x0, N_TOP, -197.5, x1, N_TOP + 0.3, -192.5, { kind: K.STONE, color: PAL.stone });
     ctx.solid([x0, N_TOP, -197.5], [x1, N_TOP + 0.3, -192.5], 'rim');
@@ -515,7 +534,7 @@ export function buildLevel(scene, physics, materials) {
   keepOut.push({ minX: -61, maxX: -55, minZ: -230, maxZ: 20 });
   const corridor = (z) => (z > -60 ? [-24, 26] : z > -140 ? [-25, 28] : [-17, 33]);
   // Côté soleil (gauche), la ville reste basse : la vue s'ouvre sur la lumière.
-  const cap = (x, z) => (x < 0 && x > -95 && z > -150 ? 1.5 : Infinity);
+  const cap = (x, z) => (x < 0 && x > -125 && z > -170 ? 1.5 : Infinity);
   buildCity(ctx, { corridor, keepOut, cap });
 
   // =====================================================================
@@ -544,6 +563,8 @@ export function buildLevel(scene, physics, materials) {
   addMesh(ctx.farFoliage, foliageMat, false, true);
   addMesh(ctx.fabric, fabricMat, true, true);
   addMesh(ctx.water, waterMat, false, true);
+  const aoMesh = shadows.mesh();
+  if (aoMesh) { scene.add(aoMesh); meshes.push(aoMesh); }
   const signMesh = signs.mesh();
   if (signMesh) { scene.add(signMesh); meshes.push(signMesh); }
 
@@ -575,10 +596,11 @@ export function buildLevel(scene, physics, materials) {
     [2.4, 6.7, -203.5], [14.6, 6.7, -194.8],
   ];
   const orbGeo = new THREE.IcosahedronGeometry(0.16, 1);
+  const orbMat = materials?.glow ?? new THREE.MeshStandardMaterial({ color: 0xffd9a8, emissive: 0xffd9a8, emissiveIntensity: 1.1 });
   const haloTex = makeHaloTexture();
   const orbs = orbPositions.map((p, i) => {
     const g = new THREE.Group();
-    const core = new THREE.Mesh(orbGeo, materials.glow);
+    const core = new THREE.Mesh(orbGeo, orbMat);
     g.add(core);
     const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTex, color: 0xffe2b8, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.8 }));
     halo.scale.setScalar(1.3);

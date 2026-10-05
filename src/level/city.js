@@ -16,7 +16,7 @@ export function buildCity(ctx, { corridor, keepOut, cap = () => Infinity }) {
   const rand = ctx.rand;
   const placed = [];
   // Feuillage de la ville : lot séparé qui ne projette pas d'ombre (moins coûteux).
-  const nctx = { ...ctx, physics: null, foliage: ctx.farFoliage ?? ctx.foliage };
+  const nctx = { ...ctx, physics: null, foliage: ctx.farFoliage ?? ctx.foliage, ao: null, groundAt: null };
   let z = 70;
   while (z > -340) {
     const depth = 11 + rand() * 12;
@@ -24,6 +24,7 @@ export function buildCity(ctx, { corridor, keepOut, cap = () => Infinity }) {
     const zc = (zMax + zMin) / 2;
     const [cx0, cx1] = corridor(zc);
     for (const side of [-1, 1]) {
+      let prev = null;
       let x = side < 0 ? cx0 - (2 + rand() * 6) : cx1 + (2 + rand() * 6);
       while (Math.abs(x) < 150) {
         const w = 8 + rand() * 11;
@@ -71,6 +72,19 @@ export function buildCity(ctx, { corridor, keepOut, cap = () => Infinity }) {
         } else {
           roofDress(nctx, b, { batch, far: !near });
         }
+        // Passerelle couverte entre deux immeubles voisins
+        if (prev && rand() < 0.3) {
+          const gx0 = side < 0 ? b.maxX : prev.maxX, gx1 = side < 0 ? prev.minX : b.minX;
+          const zo0 = Math.max(prev.minZ, b.minZ) + 1, zo1 = Math.min(prev.maxZ, b.maxZ) - 1;
+          const yTop = Math.min(prev.top, b.top) - 3.2;
+          if (gx1 - gx0 > 2 && gx1 - gx0 < 11 && zo1 - zo0 > 4 && yTop > -10) {
+            const zc2 = (zo0 + zo1) / 2;
+            const bw = Math.min(3.6, zo1 - zo0);
+            building(nctx, { minX: gx0, maxX: gx1, minZ: zc2 - bw / 2, maxZ: zc2 + bw / 2, top: yTop, bottom: yTop - 3.4, batch, color: col, style: 0.4 + rand() * 0.2, deck: 'roof', collide: false, bands: false, corniceOver: 0.12 });
+            batch.box((gx0 + gx1) / 2, yTop - 3.5, zc2, gx1 - gx0, 0.2, bw + 0.3, { kind: K.PLASTER, color: PAL.coping });
+          }
+        }
+        prev = b;
         if (tower && rand() < 0.7) {
           // Mât fin au sommet
           batch.cylinder((b.minX + b.maxX) / 2, roofTop, (b.minZ + b.maxZ) / 2, 0.08, 0.16, 6 + rand() * 6, 6, { kind: K.METAL, color: PAL.metalLight });
